@@ -1,12 +1,18 @@
 [
     {
         "video": "first_video.mp4",
-        "mode": 1, //stream mode
-        "vol": 1 //sream volume
+        "mode": 1,
+        "vol": 1
     },
     {
         "video": "second_video.mp4",
         "mode": 5,
         "vol": 2
+    },
+    {
+        "video": "third_video.mp4",
+        "mode": 5,
+        "pixel": true,
+        "vol": 3
     }
 ]
