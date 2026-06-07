@@ -34,7 +34,7 @@ class VideoDecoder:
     Both undergo the same resize operation -> size consistency guaranteed.
     """
 
-    def __init__(self, path: str, cols: int, rows: int) -> None:
+    def __init__(self, path: str, cols: int, rows: int, skip_gray: bool = False) -> None:
         self._cap = cv2.VideoCapture(path)
         if not self._cap.isOpened():
             raise FileNotFoundError(f"Could not open video file: {path!r}")
@@ -44,6 +44,7 @@ class VideoDecoder:
         self.vid_w       : int   = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.vid_h       : int   = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self._size       : tuple = (cols, rows)
+        self._skip_gray  : bool  = skip_gray
 
     def __iter__(self):
         return self
@@ -51,17 +52,25 @@ class VideoDecoder:
     def __next__(self) -> tuple[np.ndarray, np.ndarray]:
         """
         :return: (gray[H,W] uint8,  bgr[H,W,3] uint8)
+                 gray is None when skip_gray=True (pixel mode optimization)
         """
         ok, frame = self._cap.read()
         if not ok:
             raise StopIteration
 
         small = cv2.resize(frame, self._size, interpolation=cv2.INTER_LINEAR)
+        if self._skip_gray:
+            return None, small
         gray  = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
         return gray, small   # small = downscaled BGR frame
 
     def release(self):
         self._cap.release()
+
+    def grab(self) -> bool:
+        """Advance the video by one frame WITHOUT decoding (nearly free).
+        Used by stream_server for FPS decimation of high-FPS sources."""
+        return self._cap.grab()
 
     def __del__(self):
         self.release()
@@ -183,6 +192,8 @@ class TerminalRenderer:
     _CURSOR_HOME   = "\033[H"
     _HIDE_CURSOR   = "\033[?25l"
     _SHOW_CURSOR   = "\033[?25h"
+    _DISABLE_WRAP  = "\033[?7l"    # prevent line wrapping
+    _ENABLE_WRAP   = "\033[?7h"    # restore line wrapping
     _BLACK_BG      = "\033[40m"    # black background — for contrast
     _RESET_ALL     = "\033[0m"
     _CLEAR_SCREEN  = "\033[2J"
@@ -194,11 +205,13 @@ class TerminalRenderer:
         path         : str,
         palette      : list[str] | None = None,
         quantize_bits: int = 0,
+        cols         : int = 0,
     ) -> None:
         """
         :param path:          Path to video file
         :param palette:       Custom character palette (None -> 93 levels)
         :param quantize_bits: Color quantization (0=full quality, 2=fast)
+        :param cols:          Fixed columns. If 0, auto-fit to terminal.
         """
         # ── Video metadata ────────────────────────────────────────────
         _probe = VideoDecoder(path, 2, 2)
@@ -215,18 +228,29 @@ class TerminalRenderer:
         orientation = "portrait" if vid_h > vid_w else "landscape"
         aspect      = vid_h / vid_w
 
-        if orientation == "landscape":
-            cols = t_cols
+        if cols > 0:
+            # User provided a fixed column width
             rows = max(1, int(cols * aspect * self.CHAR_RATIO))
-            if rows > t_lines:
+        else:
+            # Auto-fit to terminal size (with a safe maximum to prevent lag/wrapping)
+            safe_cols = min(t_cols, 160)  # Windows terminal often struggles above 160 cols
+            
+            if orientation == "landscape":
+                cols = safe_cols
+                rows = max(1, int(cols * aspect * self.CHAR_RATIO))
+                if rows > t_lines:
+                    rows = t_lines
+                    cols = max(1, int(rows / (aspect * self.CHAR_RATIO)))
+            else:
                 rows = t_lines
                 cols = max(1, int(rows / (aspect * self.CHAR_RATIO)))
-        else:
-            rows = t_lines
-            cols = max(1, int(rows / (aspect * self.CHAR_RATIO)))
-            if cols > t_cols:
-                cols = t_cols
-                rows = max(1, int(cols * aspect * self.CHAR_RATIO))
+                if cols > safe_cols:
+                    cols = safe_cols
+                    rows = max(1, int(cols * aspect * self.CHAR_RATIO))
+
+        # ── Calculate Center Padding ──────────────────────────────────────────────
+        self._pad_y = max(0, (t_lines - rows) // 2)
+        self._pad_x = " " * max(0, (t_cols - cols) // 2)
 
         # ── Info screen ──────────────────────────────────────────────────
         print(self._CLEAR_SCREEN)
@@ -250,7 +274,7 @@ class TerminalRenderer:
         """Main playback loop."""
         stdout = sys.stdout
 
-        stdout.write(self._HIDE_CURSOR + self._BLACK_BG)
+        stdout.write(self._DISABLE_WRAP + self._HIDE_CURSOR + self._BLACK_BG)
         stdout.flush()
 
         try:
@@ -258,6 +282,12 @@ class TerminalRenderer:
                 t0 = time.perf_counter()
 
                 ascii_frame = self._mapper.convert(gray_frame, bgr_frame)
+                
+                # Apply padding for centering
+                if self._pad_x:
+                    ascii_frame = self._pad_x + ascii_frame.replace('\n', '\n' + self._pad_x)
+                if self._pad_y > 0:
+                    ascii_frame = ('\n' * self._pad_y) + ascii_frame
 
                 stdout.write(self._CURSOR_HOME + ascii_frame)
                 stdout.flush()
@@ -270,7 +300,7 @@ class TerminalRenderer:
             pass
 
         finally:
-            stdout.write(self._SHOW_CURSOR + self._RESET_ALL + "\n")
+            stdout.write(self._ENABLE_WRAP + self._SHOW_CURSOR + self._RESET_ALL + "\n")
             stdout.flush()
             self._decoder.release()
 
@@ -288,8 +318,10 @@ if __name__ == "__main__":
         help="Path to video file (MP4, AVI, MKV ...)")
     parser.add_argument("--palette", default=None,
         help="Custom character palette, space-separated")
-    parser.add_argument("--quality", type=int, choices=[0, 1, 2, 3], default=0,
+    parser.add_argument("-q", "--quality", type=int, choices=[0, 1, 2, 3], default=0,
         help="Color quality: 0=max quality, 3=max speed (default: 0)")
+    parser.add_argument("-c", "--cols", type=int, default=0,
+        help="Fixed grid width. If 0, auto-fits to terminal (default: 0)")
     args = parser.parse_args()
 
     custom_palette = args.palette.split() if args.palette else None
@@ -299,6 +331,7 @@ if __name__ == "__main__":
             path          = args.video,
             palette       = custom_palette,
             quantize_bits = args.quality,
+            cols          = args.cols,
         )
         renderer.play()
     except FileNotFoundError as e:

@@ -262,7 +262,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 rows = rows_cfg
 
             try:
-                decoder = VideoDecoder(video_path, cols, rows)
+                decoder = VideoDecoder(video_path, cols, rows, skip_gray=pixel_mode)
             except FileNotFoundError:
                 await websocket.send_text(f"Error: '{video_path}' not found!")
                 queue_index += 1
@@ -274,27 +274,63 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             mapper       = AsciiMapper()
-            fps          = decoder.fps
-            frame_t      = 1.0 / fps
+            source_fps   = decoder.fps
+            MAX_FPS      = 30
             char_byte_lut= np.array([ord(c) for c in mapper._lut], dtype=np.uint8)
             qb           = {5: 0, 4: 2, 3: 3, 2: 5}.get(render_mode, 0)
 
-            await websocket.send_text(f"INIT:{fps}:{render_mode}:{cols}:{rows}:{int(pixel_mode)}")
+            # ── FPS DECIMATION ──
+            # If source > 30 FPS, skip every Nth frame using grab() (no decode).
+            # This halves CPU load for 60 FPS sources.
+            if source_fps > MAX_FPS:
+                skip_n = round(source_fps / MAX_FPS)  # e.g. 60/30 = 2
+                effective_fps = source_fps / skip_n
+            else:
+                skip_n = 1
+                effective_fps = source_fps
+            frame_t = 1.0 / effective_fps
+
+            await websocket.send_text(f"INIT:{effective_fps}:{render_mode}:{cols}:{rows}:{int(pixel_mode)}")
+            if skip_n > 1:
+                print(f"[FPS CAP] {source_fps} FPS → {effective_fps} FPS (skip every {skip_n} frames)")
 
             frame_buf = np.empty((rows, cols, 4), dtype=np.uint8) if render_mode > 1 else None
 
+            import struct
+            start_time = asyncio.get_event_loop().time()
+            frame_index = 0
+
+            # Pre-allocate send buffer WITH header space to avoid per-frame concat
+            if pixel_mode:
+                # Zero-Copy Pixel: 4-byte header + raw BGR (3 bytes per pixel)
+                pixel_send_buf = bytearray(4 + rows * cols * 3)
+            elif render_mode > 1:
+                # ASCII Color: 4-byte header + [char,R,G,B] per pixel
+                ascii_send_buf = bytearray(4 + rows * cols * 4)
+
+            raw_frame_num = 0
             try:
-                for gray_frame, bgr_frame in decoder:
-                    t0 = asyncio.get_event_loop().time()
+                while True:
+                    # ── FPS DECIMATION via grab() ──
+                    # For 60→30 fps: grab (skip) 1 frame, then decode 1 frame.
+                    # grab() is ~10x faster than read() because it skips decoding.
+                    for _ in range(skip_n - 1):
+                        if not decoder.grab():
+                            break  # EOF reached during skip
+
+                    try:
+                        gray_frame, bgr_frame = next(decoder)
+                    except StopIteration:
+                        break
 
                     if pixel_mode:
-                        # Pixel Mode: skip character mapping, send raw RGB
-                        rgb = bgr_frame[:, :, ::-1]
-                        if qb > 0:
-                            rgb = (rgb >> qb) << qb
-                        frame_buf[:, :, 0] = 0xDB
-                        frame_buf[:, :, 1:] = rgb
-                        await websocket.send_bytes(frame_buf.tobytes())
+                        # ── ZERO-COPY PIXEL MODE ──
+                        # Send raw BGR bytes directly. No RGB conversion,
+                        # no dummy 0xDB char, no intermediate numpy copies.
+                        bgr_bytes = bgr_frame.tobytes()
+                        struct.pack_into(">I", pixel_send_buf, 0, frame_index)
+                        pixel_send_buf[4:] = bgr_bytes
+                        await websocket.send_bytes(bytes(pixel_send_buf))
                     else:
                         indices = np.floor_divide(gray_frame, max(1, 256 // mapper._n))
                         np.clip(indices, 0, mapper._n - 1, out=indices)
@@ -302,21 +338,24 @@ async def websocket_endpoint(websocket: WebSocket):
                         if render_mode == 1:
                             char_matrix = mapper._lut[indices]
                             lines = [''.join(row) for row in char_matrix]
-                            await websocket.send_text('\n'.join(lines))
+                            await websocket.send_text(f"{frame_index}\n" + '\n'.join(lines))
                         else:
-                            H, W = gray_frame.shape
                             char_codes = char_byte_lut[indices]
                             rgb = bgr_frame[:, :, ::-1]
                             if qb > 0:
                                 rgb = (rgb >> qb) << qb
                             frame_buf[:, :, 0] = char_codes
                             frame_buf[:, :, 1:] = rgb
-                            await websocket.send_bytes(frame_buf.tobytes())
+                            struct.pack_into(">I", ascii_send_buf, 0, frame_index)
+                            ascii_send_buf[4:] = frame_buf.tobytes()
+                            await websocket.send_bytes(bytes(ascii_send_buf))
 
-                    elapsed = asyncio.get_event_loop().time() - t0
-                    wait = frame_t - elapsed
+                    elapsed = asyncio.get_event_loop().time() - start_time
+                    wait = (frame_index * frame_t) - elapsed
                     if wait > 0:
                         await asyncio.sleep(wait)
+                    
+                    frame_index += 1
 
             finally:
                 decoder.release()
@@ -504,6 +543,33 @@ if __name__ == "__main__":
     app.state.loop          = args.loop
     app.state.cols          = args.cols
     app.state.rows          = args.rows
+
+    # ── High FPS Warning ──
+    high_fps_videos = []
+    for entry in queue:
+        cap = cv2.VideoCapture(entry['video'])
+        if cap.isOpened():
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            if fps > 35:  # Consider > 35 as high FPS
+                high_fps_videos.append((entry['video'], fps))
+        cap.release()
+
+    if high_fps_videos:
+        print("\n\033[1;33m[WARNING] High FPS Source(s) Detected:\033[0m")
+        for vid, fps in high_fps_videos:
+            print(f"  - \033[36m{vid}\033[0m is \033[1;31m{fps:.1f} FPS\033[0m")
+        print("\033[33mASCILINE is optimized for 24-30 FPS cinematic playback.")
+        print("High FPS videos will automatically be decimated to ~30 FPS,")
+        print("but performance may still drop depending on the system's CPU.")
+        print("For optimal performance, we recommend using 30 FPS source videos.\033[0m\n")
+        
+        while True:
+            choice = input("\033[1mDo you want to continue anyway? (y/n): \033[0m").strip().lower()
+            if choice == 'y':
+                break
+            elif choice == 'n':
+                print("Exiting...")
+                exit(0)
 
     # ── Startup Banner ──
     print(ASCII_LOGO)

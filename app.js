@@ -41,6 +41,7 @@ let selectionBuffer = null;
 // Timing & Metrics
 let lastRenderTime = 0;
 let frameCount = 0, currentFps = 0, lastFpsUpdate = 0;
+let streamStartTime = 0;
 
 const CHAR_LUT = new Array(128);
 for (let i = 0; i < 128; i++) CHAR_LUT[i] = String.fromCharCode(i);
@@ -140,10 +141,8 @@ function connectWebSocket() {
     frameCount = 0;
     currentFps = 0;
 
-    if (audioEl) {
-        audioEl.src = '/audio?' + Date.now();
-        audioEl.volume = volumeSlider ? volumeSlider.value : 1.0;
-    }
+    // Audio is loaded later in INIT handler (Audio Ready Gate).
+    // Don't preload here — causes race conditions with vol=0 (204 response).
 
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     ws = new WebSocket(`${protocol}//${location.host}/ws`);
@@ -166,30 +165,62 @@ function connectWebSocket() {
                 pixelMode = (p.length > 5 && parseInt(p[5]) === 1);
                 buildCanvas(parseInt(p[3]), parseInt(p[4]));
 
-                // Reload audio on every INIT so each video's audio plays correctly.
-                // The server updates current_index BEFORE sending INIT, so /audio
-                // will already serve the new video's audio when we request it here.
+                // ── AUDIO READY GATE ──
+                // Buffer video frames but don't render until audio is ready.
+                // This prevents the 0.5s initial stutter.
+                readyToRender = false;
+                state = 'PLAYING';
+
+                const beginRendering = () => {
+                    readyToRender = true;
+                    streamStartTime = performance.now();
+                    lastRenderTime = performance.now();
+                    lastFpsUpdate = lastRenderTime;
+                    requestAnimationFrame(renderFrame);
+                };
+
                 if (audioEl) {
                     audioEl.pause();
                     audioEl.src = '/audio?' + Date.now();
                     audioEl.volume = volumeSlider ? volumeSlider.value : 1.0;
                     audioEl.load();
                     audioEl.play().catch(() => {});
-                }
 
-                readyToRender = true;
-                state = 'PLAYING';
-                lastRenderTime = performance.now();
-                lastFpsUpdate = lastRenderTime;
-                requestAnimationFrame(renderFrame);
+                    // Wait for audio to actually start playing
+                    if (audioEl.readyState >= 3) {
+                        beginRendering();
+                    } else {
+                        audioEl.addEventListener('playing', beginRendering, { once: true });
+                        // Fallback: if audio fails to load (vol=0 / 204), start after 500ms
+                        setTimeout(() => {
+                            if (!readyToRender) beginRendering();
+                        }, 500);
+                    }
+                } else {
+                    // No audio element at all → start immediately
+                    beginRendering();
+                }
                 return;
             }
-            frameBuffer.push(event.data);
+            
+            // Mode 1: Text Frame with Timestamp
+            const text = event.data;
+            const newlineIdx = text.indexOf('\n');
+            const frameIndex = parseInt(text.substring(0, newlineIdx));
+            const frameTime = frameIndex / targetFps;
+            const frameData = text.substring(newlineIdx + 1);
+            frameBuffer.push({ data: frameData, time: frameTime });
         } else {
-            frameBuffer.push(event.data);
+            // Binary Frames with 4-byte header
+            const buffer = event.data;
+            const view = new DataView(buffer);
+            const frameIndex = view.getUint32(0, false); // Big-endian
+            const frameTime = frameIndex / targetFps;
+            const frameData = new Uint8Array(buffer, 4);
+            frameBuffer.push({ data: frameData, time: frameTime });
         }
 
-        while (frameBuffer.length > BUFFER_SIZE * 3) frameBuffer.shift();
+        while (frameBuffer.length > BUFFER_SIZE * 5) frameBuffer.shift();
     };
 
     ws.onopen = () => { statusEl.textContent = 'Buffering...'; };
@@ -215,11 +246,31 @@ function connectWebSocket() {
 // ═══════════════════════════════════════
 
 function renderFrame(now) {
-    if (state !== 'PLAYING') return;
+    if (state !== 'PLAYING' || !readyToRender) return;
     requestAnimationFrame(renderFrame);
 
-    const elapsed = now - lastRenderTime;
-    if (elapsed < frameInterval) return;
+    // ── MASTER CLOCK LOGIC ──
+    let masterClock;
+    if (audioEl && audioEl.readyState >= 1 && !audioEl.paused) {
+        masterClock = audioEl.currentTime;
+    } else {
+        masterClock = (now - streamStartTime) / 1000.0;
+    }
+
+    if (frameBuffer.length === 0) return;
+
+    // A/V Sync: Drop frames that are too far behind the master clock (catch up)
+    while (frameBuffer.length > 1 && frameBuffer[0].time < masterClock - 0.1) {
+        frameBuffer.shift();
+    }
+
+    // A/V Sync: Wait if the frame is in the future
+    if (frameBuffer[0].time > masterClock + 0.05) {
+        return;
+    }
+
+    const frameObj = frameBuffer.shift();
+    const frame = frameObj.data;
 
     frameCount++;
     if (now - lastFpsUpdate >= 1000) {
@@ -231,29 +282,28 @@ function renderFrame(now) {
         statusEl.textContent = `FPS: ${currentFps}/${Math.round(targetFps)} | Buf: ${frameBuffer.length} | ${label}`;
     }
 
-    if (frameBuffer.length === 0) return;
     lastRenderTime = now;
-    const frame = frameBuffer.shift();
 
     if (renderMode === 1) {
         player.style.display = 'block';
         player.style.color = '#fff';
         player.textContent = frame;
     } else if (pixelMode) {
-        // ── DOT MODE: ImageData pixel blast (1 draw call) ──
-        const view = new Uint8Array(frame);
+        // ── ZERO-COPY PIXEL MODE ──
+        // Server sends raw BGR (3 bytes/pixel). We swap B↔R here.
+        const view = frame; // Already a Uint8Array
         const data = dotImageData.data;
-        // view: [char,R,G,B, char,R,G,B, ...] → data: [R,G,B,A, R,G,B,A, ...]
-        for (let src = 0, dst = 0; src < view.length; src += 4, dst += 4) {
-            data[dst]     = view[src + 1]; // R
-            data[dst + 1] = view[src + 2]; // G
-            data[dst + 2] = view[src + 3]; // B
+        // view: [B,G,R, B,G,R, ...] → data: [R,G,B,A, R,G,B,A, ...]
+        for (let src = 0, dst = 0; src < view.length; src += 3, dst += 4) {
+            data[dst]     = view[src + 2]; // R (from BGR)
+            data[dst + 1] = view[src + 1]; // G
+            data[dst + 2] = view[src];     // B
             // Alpha already set to 255 in buildCanvas
         }
         ctx.putImageData(dotImageData, 0, 0);
     } else {
         // ── STANDARD COLOR MODES (2-5): fillText per character ──
-        const view = new Uint8Array(frame);
+        const view = frame; // Already a Uint8Array
         
         // 1. Draw Canvas (Background)
         ctx.fillStyle = '#050505';

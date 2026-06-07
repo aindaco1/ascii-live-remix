@@ -1,6 +1,6 @@
 # 🌌 ASCILINE Engine
 
-**ASCILINE** is a high-performance, real-time ASCII video rendering engine. **Our core objective is to transform the web into a highly dynamic and interactive typographic canvas.** By moving away from traditional video players, ASCILINE streams visual data from a Python backend directly into the browser at **60 FPS** as raw, manipulable text.
+**ASCILINE** is a high-performance, cross-platform real-time ASCII video rendering engine. **Our core objective is to transform the web into a highly dynamic and interactive typographic canvas.** By moving away from traditional video players, ASCILINE streams visual data from a Python backend directly into the browser at **60 FPS** as raw, manipulable text.
 
 | Output | Details |
 | :--- | :--- |
@@ -17,10 +17,12 @@
 
 ## 🚀 Technical Features
 
+-   **Cross-Platform**: Runs seamlessly on Windows, macOS, and Linux.
 -   **Real-Time ASCII Streaming**: Low-latency video-to-ASCII conversion.
--   **Real-Time pixel Streaming**: Close visual quality to 360p video streaming it uses ▮ characters.
--   **High Performance**: Uses **HTML5 Canvas** for rendering instead of heavy DOM elements, enabling 60 FPS playback.
--   **Binary Protocol**: Frames are encoded into `Uint8Array` (binary) for efficient bandwidth usage.
+-   **Real-Time Pixel Streaming**: Replaces characters with colored blocks, approaching 360p video quality.
+-   **High Performance**: Uses **HTML5 Canvas** for rendering, optimized for cinematic 24-30 FPS playback. High-FPS sources are automatically decimated for stability.
+-   **Master Clock Sync**: The audio track acts as the absolute master clock, guaranteeing perfect A/V synchronization.
+-   **Zero-Copy Binary Protocol**: Frames are streamed as raw binary (`Uint8Array`) directly to the canvas, saving bandwidth and CPU.
 -   **Multiple Color Modes**: Supports everything from classic B&W to 16M color ultra-fidelity.
 -   **Flexible Video Management**: Supports JSON playlists (per-video mode & volume), 
       folder-based auto-queuing (filesystem order), single-file mode, and infinite loop 
@@ -79,13 +81,18 @@ python stream_server.py --playlist playlist.json --cols 220 --loop
 ```
 Use `playlist.json` when you need different `--mode` or `--vol` settings for each video.
 
+> 💡 **Windows Users:** You can use the included `serve.bat` shortcut for quicker typing: `.\serve video.mp4 --cols 240`
+
 Open `http://localhost:8000` in your browser.
 
 ### 4. Run directly in Terminal (Standalone)
 If you prefer to bypass the web interface, you can render the video directly inside an ANSI-supported terminal (zero-flicker, true color):
 ```bash
-python ascii_video_player2.py video.mp4 --cols 220 --quality 0
+python ascii_video_player2.py video.mp4 --cols 100 --quality 0
 ```
+> 💡 **Windows Users:** Use the shortcut `.\play video.mp4 -c 100 -q 0`
+> 
+> ⚠️ **Note:** Do not resize your terminal window during playback, as dynamic text wrapping will corrupt the ASCII layout.
 
 ## 🎨 Customization
 
