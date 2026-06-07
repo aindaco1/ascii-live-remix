@@ -144,12 +144,12 @@ python stream_server.py video.mp4 --cols 220 --vol 3   # Loud
 ```
 
 ### Playlist Format (`playlist.json`)
-Each entry can override the global `--mode` and `--vol` defaults:
+Each entry can override the global `--mode`, `--pixel`, and `--vol` defaults:
 ```json
 [
     { "video": "intro.mp4",  "mode": 1, "vol": 1 },
-    { "video": "main.mp4",   "mode": 5, "vol": 3 },
-    { "video": "outro.mp4",  "mode": 3, "vol": 2 }
+    { "video": "main.mp4",   "mode": 5, "pixel": true, "vol": 3 },
+    { "video": "outro.mp4",  "mode": 3, "pixel": false, "vol": 2 }
 ]
 ```
 Video paths are resolved automatically — the engine checks the project root and the `videos/` subfolder, so you can write just the filename.
