@@ -121,8 +121,9 @@ python stream_server.py --mode 5 --cols 240 --rows 100
 ### 📐 Resolution & Auto-Scaling
 By default, you only need to specify the width (`--cols`). ASCILINE will automatically calculate the correct `--rows` based on the source video's aspect ratio to prevent stretching.
 
-- **ASCII Mode Recommended:** `--cols 200` to `--cols 240` (Best balance of text detail and 30-40 FPS performance).
-- **Pixel Mode Recommended:** `--cols 600` to `--cols 900` (Extremely fast, easily hits 30+ FPS,close to 360p video stream).
+- **ASCII Mode Recommended:** `--cols 200` to `--cols 240` (Best balance of text detail and cinematic 30 FPS performance).
+- **Pixel Mode Recommended:** `--cols 600` to `--cols 900` (Provides near-HD visual quality. Performance heavily depends on your machine's CPU/VRAM).
+- > ⚠️ **Hardware Limits & A/V Sync:** If you push the `--cols` too high for your specific hardware (e.g., `1350` on a laptop vs a gaming desktop), the Python backend won't be able to encode and send the massive frames fast enough. When the video stream lags behind the audio, you will experience A/V desync (audio finishing early). If this happens, simply lower your `--cols` value!
 ```bash
 python stream_server.py video.mp4 --mode 5 --cols 240
 # Terminal will show: [AUTO] 1920x1080 → grid 240x67
