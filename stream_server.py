@@ -11,6 +11,7 @@ Priority Order:
 """
 
 import asyncio
+import contextlib
 import subprocess
 import json
 import numpy as np
@@ -57,13 +58,43 @@ def calc_auto_rows(cols: int, vid_w: int, vid_h: int, pixel_mode: bool) -> int:
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_WHITELIST = {"app.js", "style.css", "codec.js"}
 
+app.mount(
+    "/renderers",
+    StaticFiles(directory=os.path.join(BASE_DIR, "renderers")),
+    name="renderers",
+)
+app.mount(
+    "/media",
+    StaticFiles(directory=os.path.join(BASE_DIR, "media")),
+    name="media",
+)
+
 @app.get("/static/{filename}")
 async def serve_static(filename: str):
     if filename not in STATIC_WHITELIST:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Not found")
     filepath = os.path.join(BASE_DIR, filename)
-    return FileResponse(filepath)
+    return FileResponse(filepath, headers={"Cache-Control": "no-store, max-age=0"})
+
+async def _serve_root_static_file(filename: str):
+    if filename not in STATIC_WHITELIST:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Not found")
+    filepath = os.path.join(BASE_DIR, filename)
+    return FileResponse(filepath, headers={"Cache-Control": "no-store, max-age=0"})
+
+@app.get("/app.js")
+async def serve_root_app_js():
+    return await _serve_root_static_file("app.js")
+
+@app.get("/style.css")
+async def serve_root_style_css():
+    return await _serve_root_static_file("style.css")
+
+@app.get("/codec.js")
+async def serve_root_codec_js():
+    return await _serve_root_static_file("codec.js")
 
 def get_html_content():
     html_path = os.path.join(os.path.dirname(__file__), "index.html")
@@ -160,7 +191,7 @@ def build_queue(args) -> list[dict]:
 @app.get("/")
 async def root():
     """Serves the Frontend (HTML/JS/CSS) file to the client."""
-    return HTMLResponse(get_html_content())
+    return HTMLResponse(get_html_content(), headers={"Cache-Control": "no-store, max-age=0"})
 
 
 @app.get("/audio")
@@ -279,10 +310,50 @@ async def websocket_endpoint(websocket: WebSocket):
         return
 
     queue_index = 0  # local index; advances through the queue
+    session_overrides: dict = {}
+    session_state = {
+        "tolerance": tolerance,
+        "fps_cap": 30,
+    }
+    control_queue: asyncio.Queue[dict] = asyncio.Queue()
+
+    async def control_reader():
+        while True:
+            try:
+                text = await websocket.receive_text()
+            except (WebSocketDisconnect, RuntimeError):
+                break
+            try:
+                msg = json.loads(text)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(msg, dict) and msg.get("type") == "params":
+                await control_queue.put(msg.get("params", {}))
+
+    control_task = asyncio.create_task(control_reader())
+    client_gone = False
+
+    async def send_text_safe(payload: str) -> bool:
+        nonlocal client_gone
+        try:
+            await websocket.send_text(payload)
+            return True
+        except (WebSocketDisconnect, ConnectionClosed, RuntimeError):
+            client_gone = True
+            return False
+
+    async def send_bytes_safe(payload: bytes) -> bool:
+        nonlocal client_gone
+        try:
+            await websocket.send_bytes(payload)
+            return True
+        except (WebSocketDisconnect, ConnectionClosed, RuntimeError):
+            client_gone = True
+            return False
 
     try:
-        while True:
-            entry      = queue[queue_index]
+        while not client_gone:
+            entry      = {**queue[queue_index], **session_overrides}
             video_path = entry["video"]
             render_mode= entry["mode"]
             pixel_mode = entry.get("pixel", False)
@@ -301,7 +372,8 @@ async def websocket_endpoint(websocket: WebSocket):
             try:
                 vid_w, vid_h = get_video_dimensions(video_path)
             except FileNotFoundError:
-                await websocket.send_text(f"Error: '{video_path}' not found!")
+                if not await send_text_safe(f"Error: '{video_path}' not found!"):
+                    break
                 queue_index += 1
                 if queue_index >= len(queue):
                     if loop:
@@ -319,7 +391,8 @@ async def websocket_endpoint(websocket: WebSocket):
             try:
                 decoder = VideoDecoder(video_path, cols, rows, skip_gray=pixel_mode)
             except FileNotFoundError:
-                await websocket.send_text(f"Error: '{video_path}' not found!")
+                if not await send_text_safe(f"Error: '{video_path}' not found!"):
+                    break
                 queue_index += 1
                 if queue_index >= len(queue):
                     if loop:
@@ -330,7 +403,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
             mapper       = AsciiMapper()
             source_fps   = decoder.fps
-            MAX_FPS      = 30
+            MAX_FPS      = max(1, int(session_state.get("fps_cap", 30)))
             char_byte_lut= np.array([ord(c) for c in mapper._lut], dtype=np.uint8)
             qb           = {5: 0, 4: 2, 3: 3, 2: 5}.get(render_mode, 0)
 
@@ -345,7 +418,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 effective_fps = source_fps
             frame_t = 1.0 / effective_fps
 
-            await websocket.send_text(f"INIT:{effective_fps}:{render_mode}:{cols}:{rows}:{int(pixel_mode)}:{queue_index}")
+            if not await send_text_safe(f"INIT:{effective_fps}:{render_mode}:{cols}:{rows}:{int(pixel_mode)}:{queue_index}"):
+                break
             if skip_n > 1:
                 print(f"[FPS CAP] {source_fps} FPS → {effective_fps} FPS (skip every {skip_n} frames)")
 
@@ -369,9 +443,52 @@ async def websocket_endpoint(websocket: WebSocket):
                 # ASCII Color: 4-byte header + [char,R,G,B] per pixel
                 ascii_send_buf = bytearray(4 + rows * cols * 4)
 
-            raw_frame_num = 0
+            reinit_requested = False
             try:
                 while True:
+                    while not control_queue.empty():
+                        params = await control_queue.get()
+                        if not isinstance(params, dict):
+                            continue
+
+                        if "codecQuality" in params:
+                            q = params.get("codecQuality")
+                            session_state["tolerance"] = {
+                                "lossless": 0,
+                                "high": 4,
+                                "balanced": 8,
+                                "low": 16,
+                            }.get(q, session_state["tolerance"])
+                        if "codecTolerance" in params:
+                            try:
+                                session_state["tolerance"] = max(0, int(params["codecTolerance"]))
+                            except (TypeError, ValueError):
+                                pass
+                        if "fpsCap" in params:
+                            try:
+                                session_state["fps_cap"] = max(1, int(params["fpsCap"]))
+                                reinit_requested = True
+                            except (TypeError, ValueError):
+                                pass
+
+                        structural = False
+                        for key in ("cols", "rows", "mode", "pixel"):
+                            if key in params:
+                                structural = True
+                                if key in {"cols", "rows", "mode"}:
+                                    try:
+                                        session_overrides[key] = int(params[key])
+                                    except (TypeError, ValueError):
+                                        continue
+                                elif key == "pixel":
+                                    session_overrides[key] = bool(params[key])
+                        if structural:
+                            reinit_requested = True
+
+                    if reinit_requested:
+                        print("[REINIT] Applying live stream parameter changes.")
+                        break
+
                     # ── FPS DECIMATION via grab() ──
                     # For 60→30 fps: grab (skip) 1 frame, then decode 1 frame.
                     # grab() is ~10x faster than read() because it skips decoding.
@@ -390,17 +507,23 @@ async def websocket_endpoint(websocket: WebSocket):
                         if adaptive:
                             msg, prev_frame = encode_frame(
                                 np.ascontiguousarray(bgr_frame),
-                                prev_frame, frame_index, tolerance=tolerance)
-                            await websocket.send_bytes(msg)
+                                prev_frame,
+                                frame_index,
+                                tolerance=session_state["tolerance"],
+                            )
+                            if not await send_bytes_safe(msg):
+                                break
                             bw_bytes_sent += len(msg)
                             bw_raw_bytes += raw_size
                         else:
                             # ── ZERO-COPY PIXEL MODE (legacy) ──
                             struct.pack_into(">I", pixel_send_buf, 0, frame_index)
                             pixel_send_buf[4:] = bgr_frame.tobytes()
-                            await websocket.send_bytes(bytes(pixel_send_buf))
-                            bw_bytes_sent += len(pixel_send_buf)
-                            bw_raw_bytes += len(pixel_send_buf)
+                            payload = bytes(pixel_send_buf)
+                            if not await send_bytes_safe(payload):
+                                break
+                            bw_bytes_sent += len(payload)
+                            bw_raw_bytes += len(payload)
                     else:
                         indices = np.floor_divide(gray_frame, max(1, 256 // mapper._n))
                         np.clip(indices, 0, mapper._n - 1, out=indices)
@@ -409,8 +532,9 @@ async def websocket_endpoint(websocket: WebSocket):
                             char_matrix = mapper._lut[indices]
                             lines = [''.join(row) for row in char_matrix]
                             payload = f"{frame_index}\n" + '\n'.join(lines)
-                            await websocket.send_text(payload)
-                            payload_size = len(payload.encode('utf-8'))
+                            if not await send_text_safe(payload):
+                                break
+                            payload_size = len(payload.encode("utf-8"))
                             bw_bytes_sent += payload_size
                             bw_raw_bytes += payload_size
                         else:
@@ -423,17 +547,26 @@ async def websocket_endpoint(websocket: WebSocket):
                             raw_size = 4 + rows * cols * 4
                             if adaptive:
                                 msg, prev_frame = encode_frame(
-                                    frame_buf, prev_frame, frame_index,
-                                    tolerance=tolerance)
-                                await websocket.send_bytes(msg)
+                                    frame_buf,
+                                    prev_frame,
+                                    frame_index,
+                                    tolerance=session_state["tolerance"],
+                                )
+                                if not await send_bytes_safe(msg):
+                                    break
                                 bw_bytes_sent += len(msg)
                                 bw_raw_bytes += raw_size
                             else:
                                 struct.pack_into(">I", ascii_send_buf, 0, frame_index)
                                 ascii_send_buf[4:] = frame_buf.tobytes()
-                                await websocket.send_bytes(bytes(ascii_send_buf))
-                                bw_bytes_sent += len(ascii_send_buf)
-                                bw_raw_bytes += len(ascii_send_buf)
+                                payload = bytes(ascii_send_buf)
+                                if not await send_bytes_safe(payload):
+                                    break
+                                bw_bytes_sent += len(payload)
+                                bw_raw_bytes += len(payload)
+
+                    if client_gone:
+                        break
 
                     current_time = time.time()
                     if debug_mode and current_time - bw_start_time >= 1.0:
@@ -455,6 +588,12 @@ async def websocket_endpoint(websocket: WebSocket):
             finally:
                 decoder.release()
 
+            if client_gone:
+                break
+
+            if reinit_requested:
+                continue
+
             # Video finished → advance queue
             queue_index += 1
             if queue_index >= len(queue):
@@ -467,6 +606,10 @@ async def websocket_endpoint(websocket: WebSocket):
 
     except (WebSocketDisconnect, ConnectionClosed):
         print("Client disconnected from the stream.")
+    finally:
+        control_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await control_task
 
 
 ASCII_LOGO = "\033[36m" + r"""

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "chars": " .'`^\":;Il!i><~+_-?][}{1)(|/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$",
+  "tileW": 6,
+  "tileH": 9,
+  "gridCols": 9,
+  "gridRows": 8,
+  "atlasW": 54,
+  "atlasH": 72,
+  "minIntensity": 180
+}

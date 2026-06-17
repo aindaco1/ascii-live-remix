@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "bins": 10,
+  "width": 1000,
+  "height": 1000,
+  "chars": 68,
+  "indexing": "x = a + B*b + B²*c; y = d + B*e + B²*f"
+}

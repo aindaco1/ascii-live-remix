@@ -1,0 +1,17 @@
+.git
+.DS_Store
+.venv
+.venv-*
+.venv-linux
+venv
+__pycache__
+*.pyc
+videos/*.mp4
+videos/*.avi
+videos/*.mov
+videos/*.mkv
+videos/*.webm
+experiments/vectors
+experiments/autobahn/reports
+node_modules
+tmp*

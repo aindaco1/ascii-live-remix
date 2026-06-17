@@ -4,80 +4,117 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ASCILINE - Dynamic Typography Engine</title>
-
-    <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
-
-    <!-- Core Styles -->
-    <link rel="stylesheet" href="/static/style.css">
+    <meta http-equiv="Cache-Control" content="no-store">
+    <title>ASCILINE Remix Renderer Lab</title>
+    <link rel="stylesheet" href="style.css?v=20260617-live-renderer-crossfade">
 </head>
 
 <body>
-    <!-- Header Section -->
-    <header class="blog-header">
-        <h1>ASCILINE</h1>
-        <p>Turning the web into a living, breathing typographic canvas.</p>
-    </header>
-
-    <!-- Main Content -->
-    <main class="blog-container">
-        <article class="blog-post">
-            <h2 class="post-title">The Web Was Never Meant to Be Static</h2>
-            <div class="post-meta">Manifesto // May 4, 2026 // ASCILINE Core Team</div>
-
-            <p class="post-content">
-                Every character on this page is potential energy. The web was built on text — HTML, 
-                the very skeleton of every site you visit, is nothing but structured characters. Yet 
-                somewhere along the way, we forgot that text itself can be the medium, not just the 
-                message. ASCILINE exists to remind us: every glyph is a pixel waiting to move.
-            </p>
-
-            <!-- Video Wrapper -->
-            <div class="video-wrapper">
-                <div id="status" class="status">System Ready</div>
-
-                <!-- Main Player Container -->
-                <div id="player-container">
-                    <!-- Text-based rendering (B&W Mode) -->
-                    <pre id="ascii-player"></pre>
-
-                    <!-- Canvas-based rendering (Color Modes) -->
-                    <canvas id="ascii-canvas"></canvas>
-
-                    <!-- Interaction Overlay -->
-                    <div id="play-overlay">
-                        <div class="play-btn"></div>
-                        <span class="play-label">Initialize Uplink</span>
-                    </div>
+    <div class="app-shell">
+        <header class="topbar">
+            <div class="brand">
+                <div class="brand-mark">AR</div>
+                <div>
+                    <h1>ASCILINE Remix</h1>
+                    <p>Renderer Lab</p>
                 </div>
-
-                <!-- Player Controls Bar -->
-                <div class="player-controls">
-                    <!-- Volume Control -->
-                    <div class="ctrl-group">
-                        <span class="ctrl-icon">VOL_</span>
-                        <input id="volume-slider" type="range" min="0" max="1" step="0.05" value="1">
-                    </div>
-                </div>
-
-                <!-- Hidden Audio Element -->
-                <audio id="ascii-audio" preload="none"></audio>
             </div>
 
-            <p class="post-content">
-                This is not a video player in the traditional sense. There is no &lt;video&gt; tag here, 
-                no compressed binary stream decoded by your GPU. Instead, a WebSocket pushes raw 
-                character data at 24+ frames per second, and your browser renders it as pure text — 
-                the same primitive that built the entire internet. The web becomes dynamic not through 
-                heavier payloads, but by rethinking what was already there.
-            </p>
-        </article>
-    </main>
+            <div class="topbar-controls">
+                <label class="field compact">
+                    <span>Source</span>
+                    <select id="source-mode">
+                        <option value="stream">Stream</option>
+                        <option value="static">Static</option>
+                    </select>
+                </label>
+                <label class="field compact">
+                    <span>Backend</span>
+                    <select id="backend">
+                        <option value="auto">Auto</option>
+                        <option value="webgpu">WebGPU</option>
+                        <option value="webgl2">WebGL2</option>
+                        <option value="canvas2d">Canvas2D</option>
+                        <option value="pixel-canvas">Pixel Canvas</option>
+                    </select>
+                </label>
+                <button id="toggle-play" class="primary-btn" type="button">Start</button>
+            </div>
 
-    <!-- Core Engine Logic -->
-    <script src="/static/codec.js"></script>
-    <script src="/static/app.js"></script>
+            <div class="topbar-status">
+                <span id="backend-status">Backend: idle</span>
+                <span id="connection-status">Disconnected</span>
+            </div>
+        </header>
+
+        <main class="workspace">
+            <section class="preview-region">
+                <div class="preview-toolbar">
+                    <div>
+                        <strong id="active-preset-label">Point & Click Default</strong>
+                        <span id="source-label">stream source</span>
+                    </div>
+                    <div class="preview-toolbar-right">
+                        <button id="popout-window" type="button">Pop Out</button>
+                        <div class="meter-strip">
+                            <span id="fps-meter">FPS 0/24</span>
+                            <span id="buffer-meter">BUF 0</span>
+                            <span id="grid-meter">480 x auto</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="player-container" class="preview-frame">
+                    <div id="gpu-stage" class="render-layer"></div>
+                    <canvas id="ascii-canvas" class="render-layer"></canvas>
+                    <pre id="ascii-player" class="selection-layer"></pre>
+                    <div id="transition-layer" class="transition-layer"></div>
+                    <div id="play-overlay" class="play-overlay">
+                        <button class="play-overlay-btn" type="button">Start Renderer</button>
+                    </div>
+                    <div id="stats-overlay" class="stats-overlay"></div>
+                </div>
+
+                <audio id="ascii-audio" preload="none"></audio>
+            </section>
+
+            <aside class="inspector">
+                <section class="panel source-panel">
+                    <div class="panel-heading">
+                        <h2>Source</h2>
+                        <button id="reload-source" type="button">Reload</button>
+                    </div>
+                    <div class="source-list-wrap">
+                        <div id="source-list" class="source-list" role="listbox" aria-label="Test media"></div>
+                    </div>
+                    <div class="source-actions">
+                        <button id="add-custom-file" type="button">Add Custom File</button>
+                        <input id="local-media-file" class="visually-hidden" type="file" accept="video/*,image/*" tabindex="-1" aria-hidden="true">
+                    </div>
+                </section>
+
+                <section class="panel preset-panel">
+                    <div class="panel-heading">
+                        <h2>Presets</h2>
+                    </div>
+                    <div id="preset-list" class="preset-list"></div>
+                    <div class="preset-toolbar">
+                        <button id="save-preset" type="button" title="Save current preset" aria-label="Save current preset">Save</button>
+                        <button id="duplicate-preset" type="button" title="Duplicate preset" aria-label="Duplicate preset">Copy</button>
+                        <button id="update-preset" type="button" title="Update selected user preset" aria-label="Update selected user preset">Update</button>
+                        <button id="delete-preset" type="button" title="Delete selected user preset" aria-label="Delete selected user preset">Delete</button>
+                        <button id="export-presets" type="button" title="Export user presets" aria-label="Export user presets">Export</button>
+                        <button id="import-presets" type="button" title="Import user presets" aria-label="Import user presets">Import</button>
+                    </div>
+                </section>
+
+                <form id="controls" class="controls"></form>
+            </aside>
+        </main>
+    </div>
+
+    <script src="codec.js?v=20260617-live-renderer-crossfade"></script>
+    <script type="module" src="app.js?v=20260617-live-renderer-crossfade"></script>
 </body>
 
 </html>

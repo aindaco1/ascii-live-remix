@@ -13,7 +13,10 @@ __pycache__/
 
 # Environment & IDE
 .env
+.DS_Store
 .venv/
+.venv-linux/
+.venv-*/
 venv/
 .vscode/
 .idea/

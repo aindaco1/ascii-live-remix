@@ -91,6 +91,31 @@ cd ASCILINE
 ```bash
 pip install fastapi uvicorn opencv-python numpy websockets
 ```
+
+### Podman dev environment on macOS/Linux
+This fork includes a Podman-backed setup for reproducible local development and codec experiments. It follows the same macOS pattern as the sibling `pool` repo: prefer Podman app install paths, repair the macOS machine socket, require rootless mode, smoke-test container execution, and use Node 24+ for JavaScript tooling.
+
+```bash
+scripts/podman-doctor.sh      # verify Podman CLI, machine, engine, and rootless container execution
+scripts/podman_build.sh       # build localhost/asciline-remix-dev:latest
+scripts/podman_venv.sh        # create .venv-linux inside the repo from inside the container
+scripts/podman_run.sh bash    # enter the container, activating .venv-linux when present
+```
+
+The generated `.venv-linux/` is intentionally ignored by Git. It is a Linux virtualenv for container use, not a host macOS Python environment.
+
+Run the codec/vector suite through the same container:
+
+```bash
+scripts/podman_codec_tests.sh
+```
+
+The image defaults to Node 24 LTS. To smoke-test against the current even-numbered release, rebuild with:
+
+```bash
+NODE_MAJOR=26 scripts/podman_build.sh
+```
+
 ### 🔈 Audio Support (FFmpeg Required)
 To enable server-side audio processing (Volume 1-5), you must have FFmpeg installed.
 
