@@ -76,18 +76,25 @@ stop_podman_container() {
 
 trap 'stop_podman_container; exit 130' INT TERM
 
-set +e
-podman run "${RUN_ARGS[@]}" \
-  --name "$CONTAINER_NAME" \
-  -v "$ROOT:/workspace" \
-  -w /workspace \
-  -p "$HOST_PORT:$CONTAINER_PORT" \
-  -e PYTHONUNBUFFERED=1 \
-  -e "ASCILINE_RESTART=$ASCILINE_RESTART" \
-  -e "ASCILINE_RESTART_DELAY=$ASCILINE_RESTART_DELAY" \
-  -e "ASCILINE_RESTART_ON_SUCCESS=$ASCILINE_RESTART_ON_SUCCESS" \
-  "$IMAGE" \
-  bash -lc '
+restart_on_success_requested() {
+  case "$ASCILINE_RESTART_ON_SUCCESS" in
+    1|true|TRUE|yes|YES|on|ON) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+run_podman_container() {
+  podman run "${RUN_ARGS[@]}" \
+    --name "$CONTAINER_NAME" \
+    -v "$ROOT:/workspace" \
+    -w /workspace \
+    -p "$HOST_PORT:$CONTAINER_PORT" \
+    -e PYTHONUNBUFFERED=1 \
+    -e "ASCILINE_RESTART=$ASCILINE_RESTART" \
+    -e "ASCILINE_RESTART_DELAY=$ASCILINE_RESTART_DELAY" \
+    -e "ASCILINE_RESTART_ON_SUCCESS=$ASCILINE_RESTART_ON_SUCCESS" \
+    "$IMAGE" \
+    bash -lc '
     if [ -x .venv-linux/bin/python ]; then
       . .venv-linux/bin/activate
     else
@@ -143,10 +150,32 @@ podman run "${RUN_ARGS[@]}" \
       printf "podman: command exited with status %s; restarting in %ss\n" "$status" "$delay" >&2
       sleep "$delay"
     done
-  ' _ "$@" &
-podman_pid=$!
-wait "$podman_pid"
-status=$?
-set -e
+  ' _ "$@"
+}
+
+while true; do
+  set +e
+  run_podman_container &
+  podman_pid=$!
+  wait "$podman_pid"
+  status=$?
+  podman_pid=""
+  set -e
+
+  if ! restart_requested; then
+    break
+  fi
+
+  if [ "$status" -eq 0 ] && ! restart_on_success_requested; then
+    break
+  fi
+
+  printf "podman: container runner exited with status %s; checking Podman before restart.\n" "$status" >&2
+  ensure_podman_ready
+  podman rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+  printf "podman: restarting container in %ss\n" "$ASCILINE_RESTART_DELAY" >&2
+  sleep "$ASCILINE_RESTART_DELAY"
+done
+
 trap - INT TERM
 exit "$status"
