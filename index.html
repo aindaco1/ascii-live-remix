@@ -6,7 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-store">
     <title>ASCILINE Remix Renderer Lab</title>
-    <link rel="stylesheet" href="style.css?v=20260617-live-renderer-crossfade">
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="style.css?v=20260618-exotic-presets-3">
 </head>
 
 <body>
@@ -56,6 +57,7 @@
                     </div>
                     <div class="preview-toolbar-right">
                         <button id="popout-window" type="button">Pop Out</button>
+                        <button id="wtf-randomize" type="button" aria-pressed="false">WTF</button>
                         <div class="meter-strip">
                             <span id="fps-meter">FPS 0/24</span>
                             <span id="buffer-meter">BUF 0</span>
@@ -103,8 +105,13 @@
                         <button id="duplicate-preset" type="button" title="Duplicate preset" aria-label="Duplicate preset">Copy</button>
                         <button id="update-preset" type="button" title="Update selected user preset" aria-label="Update selected user preset">Update</button>
                         <button id="delete-preset" type="button" title="Delete selected user preset" aria-label="Delete selected user preset">Delete</button>
-                        <button id="export-presets" type="button" title="Export user presets" aria-label="Export user presets">Export</button>
-                        <button id="import-presets" type="button" title="Import user presets" aria-label="Import user presets">Import</button>
+                        <div class="preset-overflow">
+                            <button id="more-presets" type="button" title="More preset actions" aria-label="More preset actions" aria-haspopup="menu" aria-expanded="false" aria-controls="preset-overflow-menu">...</button>
+                            <div id="preset-overflow-menu" class="preset-overflow-menu" role="menu" hidden>
+                                <button id="export-presets" type="button" role="menuitem" title="Export user presets" aria-label="Export user presets">Export</button>
+                                <button id="import-presets" type="button" role="menuitem" title="Import user presets" aria-label="Import user presets">Import</button>
+                            </div>
+                        </div>
                     </div>
                 </section>
 
@@ -114,7 +121,7 @@
     </div>
 
     <script src="codec.js?v=20260617-live-renderer-crossfade"></script>
-    <script type="module" src="app.js?v=20260617-preset-active-noop"></script>
+    <script type="module" src="app.js?v=20260618-exotic-presets-3"></script>
 </body>
 
 </html>

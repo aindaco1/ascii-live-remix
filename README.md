@@ -104,6 +104,21 @@ scripts/podman_run.sh bash    # enter the container, activating .venv-linux when
 
 The generated `.venv-linux/` is intentionally ignored by Git. It is a Linux virtualenv for container use, not a host macOS Python environment.
 
+For a long-running renderer or static server, enable the run wrapper's supervisor so the command restarts if it exits unexpectedly while the wrapper is still running:
+
+```bash
+PORT=8000 ASCILINE_RESTART=1 scripts/podman_run.sh python stream_server.py video.mp4 --host 0.0.0.0 --port 8000
+PORT=8010 ASCILINE_RESTART=1 scripts/podman_run.sh python -m http.server 8010 --bind 0.0.0.0
+```
+
+Set `ASCILINE_RESTART_DELAY=1` to change the restart pause in seconds. Exit code `0` is treated as an intentional stop; set `ASCILINE_RESTART_ON_SUCCESS=1` to restart after clean exits too. `RESTART=1`, `RESTART_DELAY=1`, and `RESTART_ON_SUCCESS=1` are accepted as shorter aliases.
+
+The wrapper checks that the requested host port is free before starting Podman. If another process owns the port, stop it or use a different host port:
+
+```bash
+HOST_PORT=8011 CONTAINER_PORT=8010 ASCILINE_RESTART=1 scripts/podman_run.sh python -m http.server 8010 --bind 0.0.0.0
+```
+
 Run the codec/vector suite through the same container:
 
 ```bash

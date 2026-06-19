@@ -30,6 +30,10 @@
     box-sizing: border-box;
 }
 
+[hidden] {
+    display: none !important;
+}
+
 html,
 body {
     width: 100%;
@@ -206,6 +210,19 @@ button:disabled {
     min-height: 28px;
     padding: 0 9px;
     font-size: 12px;
+}
+
+#wtf-randomize {
+    min-width: 46px;
+    border-color: var(--amber);
+    color: var(--amber);
+}
+
+#wtf-randomize.active,
+#wtf-randomize[aria-pressed="true"] {
+    background: var(--amber);
+    border-color: var(--amber);
+    color: var(--panel-2);
 }
 
 .preview-toolbar strong {
@@ -489,10 +506,11 @@ button:disabled {
 
 .preset-toolbar {
     display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr)) 34px;
     gap: 4px;
     padding: 6px;
     border-top: 1px solid var(--border-soft);
+    position: relative;
 }
 
 .preset-toolbar button {
@@ -502,6 +520,39 @@ button:disabled {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.preset-overflow {
+    min-width: 0;
+    position: relative;
+}
+
+.preset-overflow > button {
+    width: 100%;
+}
+
+.preset-overflow-menu {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    bottom: calc(100% + 4px);
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
+    display: grid;
+    gap: 3px;
+    min-width: 94px;
+    padding: 4px;
+    position: absolute;
+    right: 0;
+    z-index: 20;
+}
+
+.preset-overflow-menu button {
+    min-height: 26px;
+    text-align: left;
+    width: 100%;
+}
+
+.preset-overflow-menu[hidden] {
+    display: none !important;
 }
 
 .source-panel {
@@ -721,6 +772,69 @@ button:disabled {
     text-transform: uppercase;
 }
 
+.control-group[data-group="Playback"],
+.control-group[data-group="Grid"],
+.control-group[data-group="Color"],
+.control-group[data-group="Sampling"] {
+    margin-bottom: 8px;
+}
+
+.control-group[data-group="Playback"] h2,
+.control-group[data-group="Grid"] h2,
+.control-group[data-group="Color"] h2,
+.control-group[data-group="Sampling"] h2 {
+    min-height: 30px;
+    padding: 5px 8px;
+}
+
+.control-group[data-group="Playback"] .control-row,
+.control-group[data-group="Grid"] .control-row,
+.control-group[data-group="Color"] .control-row,
+.control-group[data-group="Sampling"] .control-row {
+    grid-template-columns: minmax(88px, 0.95fr) minmax(92px, 1fr) 48px;
+    gap: 6px;
+    min-height: 30px;
+    padding: 4px 6px;
+}
+
+.control-group[data-group="Playback"] .control-label span,
+.control-group[data-group="Grid"] .control-label span,
+.control-group[data-group="Color"] .control-label span,
+.control-group[data-group="Sampling"] .control-label span {
+    font-size: 11px;
+    line-height: 12px;
+}
+
+.control-group[data-group="Playback"] .control-label small,
+.control-group[data-group="Grid"] .control-label small,
+.control-group[data-group="Color"] .control-label small,
+.control-group[data-group="Sampling"] .control-label small {
+    display: none;
+}
+
+.control-group[data-group="Playback"] .control-value,
+.control-group[data-group="Grid"] .control-value,
+.control-group[data-group="Color"] .control-value,
+.control-group[data-group="Sampling"] .control-value {
+    font-size: 10px;
+}
+
+.control-group[data-group="Playback"] .control-row select,
+.control-group[data-group="Grid"] .control-row select,
+.control-group[data-group="Color"] .control-row select,
+.control-group[data-group="Sampling"] .control-row select {
+    min-height: 24px;
+    font-size: 11px;
+}
+
+.control-group[data-group="Playback"] .control-row input[type="checkbox"],
+.control-group[data-group="Grid"] .control-row input[type="checkbox"],
+.control-group[data-group="Color"] .control-row input[type="checkbox"],
+.control-group[data-group="Sampling"] .control-row input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+}
+
 @media (max-width: 980px) {
     body {
         overflow: auto;
@@ -759,7 +873,7 @@ button:disabled {
 
 @media (max-width: 560px) {
     .preset-toolbar {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr)) 34px;
     }
 
     .preview-toolbar {
@@ -769,9 +883,19 @@ button:disabled {
         padding: 10px 12px;
     }
 
+    .preview-region {
+        grid-template-rows: auto minmax(320px, 1fr);
+    }
+
     .preview-toolbar-right {
         align-items: flex-start;
-        flex-direction: column;
+        flex-direction: row;
+        flex-wrap: wrap;
+        width: 100%;
+    }
+
+    .meter-strip {
+        justify-content: flex-start;
     }
 
     .preview-frame {

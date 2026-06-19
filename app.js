@@ -27,10 +27,13 @@ const els = {
     duplicatePreset: $('duplicate-preset'),
     updatePreset: $('update-preset'),
     deletePreset: $('delete-preset'),
+    morePresets: $('more-presets'),
+    presetOverflowMenu: $('preset-overflow-menu'),
     exportPresets: $('export-presets'),
     importPresets: $('import-presets'),
     reloadSource: $('reload-source'),
     popoutWindow: $('popout-window'),
+    wtfButton: $('wtf-randomize'),
     sourceList: $('source-list'),
     addCustomFile: $('add-custom-file'),
     localMediaFile: $('local-media-file'),
@@ -118,6 +121,8 @@ const CODEC_TOLERANCE = {
     balanced: 8,
     low: 16
 };
+const VIDEO_PLAY_TIMEOUT_MS = 900;
+const GPU_QUEUE_SETTLE_TIMEOUT_MS = 160;
 
 const BUILTIN_PRESETS = [
     {
@@ -160,27 +165,6 @@ const BUILTIN_PRESETS = [
             mode: 5,
             pixel: false,
             codecQuality: 'high'
-        }
-    },
-    {
-        id: 'crt-ghost',
-        name: 'CRT Ghost',
-        readonly: true,
-        transitionSeconds: 2,
-        params: {
-            cols: 420,
-            cellWidth: 2,
-            cellHeight: 4,
-            saturationBoost: 1.05,
-            contrastBoost: 0.92,
-            brightness: 0.88,
-            bgBlend: 0.48,
-            jitterAmount: 0.18,
-            jitterSpeed: 0.35,
-            quantizeBits: 2,
-            mode: 4,
-            pixel: false,
-            codecQuality: 'balanced'
         }
     },
     {
@@ -247,27 +231,6 @@ const BUILTIN_PRESETS = [
         }
     },
     {
-        id: 'soft-newspaper',
-        name: 'Soft Newspaper',
-        readonly: true,
-        transitionSeconds: 2.2,
-        params: {
-            cols: 360,
-            cellWidth: 3,
-            cellHeight: 5,
-            saturationBoost: 0.42,
-            contrastBoost: 1.18,
-            brightness: 1.08,
-            bgBlend: 0.58,
-            jitterAmount: 0.04,
-            jitterSpeed: 0.1,
-            quantizeBits: 4,
-            mode: 2,
-            pixel: false,
-            codecQuality: 'balanced'
-        }
-    },
-    {
         id: 'signal-loss',
         name: 'Signal Loss',
         readonly: true,
@@ -286,29 +249,6 @@ const BUILTIN_PRESETS = [
             mode: 2,
             pixel: false,
             codecQuality: 'low'
-        }
-    },
-    {
-        id: 'cinema-ascii',
-        name: 'Cinema ASCII',
-        readonly: true,
-        transitionSeconds: 1.6,
-        params: {
-            cols: 520,
-            fps: 24,
-            fpsCap: 30,
-            cellWidth: 2,
-            cellHeight: 3,
-            saturationBoost: 1.28,
-            contrastBoost: 1.18,
-            brightness: 1,
-            bgBlend: 0.22,
-            jitterAmount: 0,
-            jitterSpeed: 0,
-            quantizeBits: 0,
-            mode: 5,
-            pixel: false,
-            codecQuality: 'high'
         }
     },
     {
@@ -400,28 +340,6 @@ const BUILTIN_PRESETS = [
         }
     },
     {
-        id: 'velvet-void',
-        name: 'Velvet Void',
-        readonly: true,
-        transitionSeconds: 2.4,
-        params: {
-            cols: 300,
-            cellWidth: 5,
-            cellHeight: 7,
-            saturationBoost: 0.18,
-            contrastBoost: 0.88,
-            brightness: 0.64,
-            gamma: 1.95,
-            bgBlend: 0.68,
-            jitterAmount: 0.02,
-            jitterSpeed: 0.05,
-            quantizeBits: 6,
-            mode: 1,
-            pixel: false,
-            codecQuality: 'balanced'
-        }
-    },
-    {
         id: 'teletext-reactor',
         name: 'Teletext Reactor',
         readonly: true,
@@ -465,28 +383,6 @@ const BUILTIN_PRESETS = [
             mode: 3,
             pixel: false,
             codecQuality: 'low'
-        }
-    },
-    {
-        id: 'icewire-grid',
-        name: 'Icewire Grid',
-        readonly: true,
-        transitionSeconds: 1.5,
-        params: {
-            cols: 820,
-            cellWidth: 1,
-            cellHeight: 3,
-            saturationBoost: 0.28,
-            contrastBoost: 2.4,
-            brightness: 1.28,
-            gamma: 0.78,
-            bgBlend: 0.02,
-            jitterAmount: 0,
-            jitterSpeed: 0,
-            quantizeBits: 0,
-            mode: 5,
-            pixel: false,
-            codecQuality: 'lossless'
         }
     },
     {
@@ -558,28 +454,6 @@ const BUILTIN_PRESETS = [
         }
     },
     {
-        id: 'whiteout-bloom',
-        name: 'Whiteout Bloom',
-        readonly: true,
-        transitionSeconds: 1.2,
-        params: {
-            cols: 520,
-            cellWidth: 3,
-            cellHeight: 3,
-            saturationBoost: 0.85,
-            contrastBoost: 0.62,
-            brightness: 1.85,
-            gamma: 0.42,
-            bgBlend: 0.44,
-            jitterAmount: 0.08,
-            jitterSpeed: 0.3,
-            quantizeBits: 4,
-            mode: 4,
-            pixel: false,
-            codecQuality: 'balanced'
-        }
-    },
-    {
         id: 'terminal-collapse',
         name: 'Terminal Collapse',
         readonly: true,
@@ -599,6 +473,186 @@ const BUILTIN_PRESETS = [
             solidMode: false,
             glyphMode: true,
             mode: 1,
+            pixel: false,
+            codecQuality: 'low'
+        }
+    },
+    {
+        id: 'neon-razorstorm',
+        name: 'Neon Razorstorm',
+        readonly: true,
+        transitionSeconds: 0.85,
+        params: {
+            cols: 780,
+            cellWidth: 1,
+            cellHeight: 2,
+            saturationBoost: 3,
+            contrastBoost: 2.35,
+            brightness: 1.08,
+            gamma: 0.72,
+            bgBlend: 0.08,
+            jitterAmount: 0.96,
+            jitterSpeed: 3.9,
+            quantizeBits: 1,
+            mode: 5,
+            pixel: false,
+            codecQuality: 'low'
+        }
+    },
+    {
+        id: 'plasma-bruise',
+        name: 'Plasma Bruise',
+        readonly: true,
+        transitionSeconds: 1.25,
+        params: {
+            cols: 620,
+            cellWidth: 2,
+            cellHeight: 3,
+            saturationBoost: 2.85,
+            contrastBoost: 2.15,
+            brightness: 0.92,
+            gamma: 1.85,
+            bgBlend: 0.18,
+            jitterAmount: 0.78,
+            jitterSpeed: 2.7,
+            quantizeBits: 2,
+            mode: 4,
+            pixel: false,
+            codecQuality: 'balanced'
+        }
+    },
+    {
+        id: 'toxic-halftone',
+        name: 'Toxic Halftone',
+        readonly: true,
+        transitionSeconds: 1.05,
+        params: {
+            cols: 360,
+            cellWidth: 4,
+            cellHeight: 6,
+            saturationBoost: 2.55,
+            contrastBoost: 2.5,
+            brightness: 1.12,
+            gamma: 0.9,
+            bgBlend: 0.16,
+            jitterAmount: 0.52,
+            jitterSpeed: 1.8,
+            quantizeBits: 5,
+            solidMode: false,
+            glyphMode: true,
+            mode: 3,
+            pixel: false,
+            codecQuality: 'low'
+        }
+    },
+    {
+        id: 'magma-telemetry',
+        name: 'Magma Telemetry',
+        readonly: true,
+        transitionSeconds: 1.45,
+        params: {
+            cols: 680,
+            cellWidth: 2,
+            cellHeight: 2,
+            saturationBoost: 2.7,
+            contrastBoost: 2.05,
+            brightness: 0.86,
+            gamma: 1.2,
+            bgBlend: 0.28,
+            jitterAmount: 0.88,
+            jitterSpeed: 3.2,
+            quantizeBits: 3,
+            mode: 5,
+            pixel: false,
+            codecQuality: 'balanced'
+        }
+    },
+    {
+        id: 'laser-rot',
+        name: 'Laser Rot',
+        readonly: true,
+        transitionSeconds: 0.75,
+        params: {
+            cols: 840,
+            cellWidth: 1,
+            cellHeight: 2,
+            saturationBoost: 2.95,
+            contrastBoost: 2.65,
+            brightness: 0.74,
+            gamma: 1.55,
+            bgBlend: 0.2,
+            jitterAmount: 1,
+            jitterSpeed: 4,
+            quantizeBits: 0,
+            mode: 5,
+            pixel: false,
+            codecQuality: 'low'
+        }
+    },
+    {
+        id: 'cyberdelic-riot',
+        name: 'Cyberdelic Riot',
+        readonly: true,
+        transitionSeconds: 1.15,
+        params: {
+            cols: 520,
+            cellWidth: 3,
+            cellHeight: 3,
+            saturationBoost: 3,
+            contrastBoost: 1.9,
+            brightness: 1.18,
+            gamma: 0.68,
+            bgBlend: 0.1,
+            jitterAmount: 0.72,
+            jitterSpeed: 2.9,
+            quantizeBits: 2,
+            solidMode: true,
+            glyphMode: false,
+            mode: 5,
+            pixel: true,
+            codecQuality: 'high'
+        }
+    },
+    {
+        id: 'ultraviolet-siren',
+        name: 'Ultraviolet Siren',
+        readonly: true,
+        transitionSeconds: 1.35,
+        params: {
+            cols: 460,
+            cellWidth: 3,
+            cellHeight: 5,
+            saturationBoost: 2.65,
+            contrastBoost: 2.75,
+            brightness: 0.82,
+            gamma: 2.05,
+            bgBlend: 0.24,
+            jitterAmount: 0.42,
+            jitterSpeed: 1.7,
+            quantizeBits: 4,
+            mode: 4,
+            pixel: false,
+            codecQuality: 'balanced'
+        }
+    },
+    {
+        id: 'glitch-orchid',
+        name: 'Glitch Orchid',
+        readonly: true,
+        transitionSeconds: 0.95,
+        params: {
+            cols: 740,
+            cellWidth: 1,
+            cellHeight: 3,
+            saturationBoost: 2.35,
+            contrastBoost: 2.3,
+            brightness: 1.02,
+            gamma: 0.82,
+            bgBlend: 0.12,
+            jitterAmount: 0.94,
+            jitterSpeed: 3.5,
+            quantizeBits: 2,
+            mode: 5,
             pixel: false,
             codecQuality: 'low'
         }
@@ -782,8 +836,38 @@ function clone(value) {
     return JSON.parse(JSON.stringify(value));
 }
 
+function stableJson(value) {
+    if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+    if (value && typeof value === 'object') {
+        const keys = Object.keys(value).sort();
+        return `{${keys.map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
+    }
+    return JSON.stringify(value);
+}
+
 function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
+}
+
+function randomBetween(min, max) {
+    return min + Math.random() * (max - min);
+}
+
+function randomInt(min, max) {
+    return Math.round(randomBetween(min, max));
+}
+
+function randomChoice(items) {
+    return items[Math.floor(Math.random() * items.length)];
+}
+
+function randomBool(probability = 0.5) {
+    return Math.random() < probability;
+}
+
+function snapToStep(value, step = 1) {
+    const safeStep = Number(step) || 1;
+    return Math.round(value / safeStep) * safeStep;
 }
 
 function easeInOut(t) {
@@ -1027,21 +1111,58 @@ async function playVideoWithMutedFallback(video, params, allowMutedFallback = tr
     if (!video || !params) return { started: false, mutedFallback: false };
     if (!video.paused && !video.ended) return { started: true, mutedFallback: false };
 
-    try {
-        await video.play();
-        return { started: true, mutedFallback: false };
-    } catch (error) {
-        if (!allowMutedFallback || video.muted) return { started: false, mutedFallback: false, error };
+    const playback = await tryPlayVideo(video);
+    if (playback.started) return { started: true, mutedFallback: false, timedOut: playback.timedOut };
+    if (playback.timedOut || !allowMutedFallback || video.muted) {
+        return { started: false, mutedFallback: false, timedOut: playback.timedOut, error: playback.error };
     }
 
     video.muted = true;
     params.muted = true;
+    const mutedPlayback = await tryPlayVideo(video);
+    return {
+        started: mutedPlayback.started,
+        mutedFallback: true,
+        timedOut: mutedPlayback.timedOut,
+        error: mutedPlayback.error
+    };
+}
+
+function tryPlayVideo(video, timeoutMs = VIDEO_PLAY_TIMEOUT_MS) {
+    let playPromise;
     try {
-        await video.play();
-        return { started: true, mutedFallback: true };
+        playPromise = video.play();
     } catch (error) {
-        return { started: false, mutedFallback: true, error };
+        return Promise.resolve({ started: false, timedOut: false, error });
     }
+
+    if (!playPromise || typeof playPromise.then !== 'function') {
+        return Promise.resolve({ started: !video.paused && !video.ended, timedOut: false });
+    }
+
+    let timeoutId = 0;
+    return Promise.race([
+        playPromise.then(
+            () => ({ started: true, timedOut: false }),
+            (error) => ({ started: false, timedOut: false, error })
+        ),
+        new Promise((resolve) => {
+            timeoutId = setTimeout(() => {
+                resolve({ started: !video.paused && !video.ended, timedOut: true });
+            }, timeoutMs);
+        })
+    ]).finally(() => clearTimeout(timeoutId));
+}
+
+function settleWithTimeout(promise, timeoutMs) {
+    let timeoutId = 0;
+    const guarded = Promise.resolve(promise).catch(() => undefined);
+    return Promise.race([
+        guarded,
+        new Promise((resolve) => {
+            timeoutId = setTimeout(resolve, timeoutMs);
+        })
+    ]).finally(() => clearTimeout(timeoutId));
 }
 
 async function restoreVideoPlaybackState(source, params, state) {
@@ -1278,6 +1399,37 @@ function canvasHasVisibleSignal(canvas) {
         const avgLuma = sumLuma / Math.max(1, totalPixels);
         const visibleRatio = visiblePixels / Math.max(1, totalPixels);
         return maxLuma > 28 && (avgLuma > 1.5 || visibleRatio > 0.0025);
+    } catch {
+        return false;
+    }
+}
+
+function canvasHasSafeVisualSignal(canvas) {
+    if (!canvas?.width || !canvas?.height) return false;
+    const sample = document.createElement('canvas');
+    sample.width = Math.min(120, canvas.width);
+    sample.height = Math.min(90, canvas.height);
+    const ctx = sample.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return false;
+
+    try {
+        ctx.drawImage(canvas, 0, 0, sample.width, sample.height);
+        const data = ctx.getImageData(0, 0, sample.width, sample.height).data;
+        let minLuma = 255;
+        let maxLuma = 0;
+        let sumLuma = 0;
+        let sumLumaSquared = 0;
+        for (let i = 0; i < data.length; i += 4) {
+            const luma = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+            minLuma = Math.min(minLuma, luma);
+            maxLuma = Math.max(maxLuma, luma);
+            sumLuma += luma;
+            sumLumaSquared += luma * luma;
+        }
+        const total = Math.max(1, data.length / 4);
+        const avg = sumLuma / total;
+        const variance = Math.max(0, sumLumaSquared / total - avg * avg);
+        return maxLuma > 28 && avg > 3 && avg < 248 && (maxLuma - minLuma > 14 || variance > 24);
     } catch {
         return false;
     }
@@ -1534,11 +1686,12 @@ class StaticRuntime {
         const layer = this._makeRendererLayer('renderer-buffer-current');
 
         if (this.usingCanvasFallback) {
-            this.renderer = new CanvasStaticRenderer(layer);
-            await this.renderer.start(params, options);
+            const renderer = new CanvasStaticRenderer(layer);
+            this.renderer = renderer;
+            await renderer.start(params, options);
             this.mediaUrl = params.mediaUrl;
             this.mediaType = params.mediaType;
-            return this.renderer.getStats();
+            return renderer.getStats();
         }
 
         try {
@@ -1549,22 +1702,24 @@ class StaticRuntime {
             });
             this.mediaUrl = params.mediaUrl;
             this.mediaType = params.mediaType;
-            this.renderer = await createRenderer(this._rendererOptions(params, layer));
+            const renderer = await createRenderer(this._rendererOptions(params, layer));
+            this.renderer = renderer;
             if (this.source.isVideo) await restoreVideoPlaybackState(this.source, params, options.mediaState);
-            this.renderer.start();
+            renderer.start();
             this.updateParams(params);
-            return this.renderer.getStats();
+            return renderer.getStats();
         } catch (error) {
             console.warn('[StaticRuntime] GPU renderer failed, falling back to canvas:', error);
             this.source?.destroy?.();
             this.source = null;
             this.usingCanvasFallback = true;
             layer.innerHTML = '';
-            this.renderer = new CanvasStaticRenderer(layer);
-            await this.renderer.start({ ...params, backend: 'canvas2d' }, options);
+            const renderer = new CanvasStaticRenderer(layer);
+            this.renderer = renderer;
+            await renderer.start({ ...params, backend: 'canvas2d' }, options);
             this.mediaUrl = params.mediaUrl;
             this.mediaType = params.mediaType;
-            return this.renderer.getStats();
+            return renderer.getStats();
         }
     }
 
@@ -2038,6 +2193,8 @@ class RendererLabApp {
         this.staticRuntime = new StaticRuntime(this);
         this.streamRuntime = new StreamRuntime(this);
         this.running = false;
+        this.starting = false;
+        this.startToken = 0;
         this.rebuildTimer = null;
         this.controlInputs = new Map();
         this.transitioning = false;
@@ -2054,6 +2211,8 @@ class RendererLabApp {
         this.customFileHandle = null;
         this.customSourceMeta = parseStoredJson(CUSTOM_SOURCE_KEY, null);
         this.customSourceStatus = this.customSourceMeta ? 'missing' : 'empty';
+        this.wtfActive = false;
+        this.wtfToken = 0;
     }
 
     async init() {
@@ -2260,12 +2419,29 @@ class RendererLabApp {
         els.duplicatePreset.addEventListener('click', () => this._duplicatePreset());
         els.updatePreset.addEventListener('click', () => this._updatePreset());
         els.deletePreset.addEventListener('click', () => this._deletePreset());
-        els.exportPresets.addEventListener('click', () => this._exportPresets());
-        els.importPresets.addEventListener('click', () => this._importPresets());
+        els.morePresets.addEventListener('click', (event) => {
+            event.stopPropagation();
+            this._togglePresetOverflow();
+        });
+        els.presetOverflowMenu.addEventListener('click', (event) => event.stopPropagation());
+        els.exportPresets.addEventListener('click', () => {
+            this._closePresetOverflow();
+            this._exportPresets();
+        });
+        els.importPresets.addEventListener('click', () => {
+            this._closePresetOverflow();
+            this._importPresets();
+        });
         els.popoutWindow.addEventListener('click', () => this.openPopout());
+        els.wtfButton.addEventListener('click', () => this.toggleWtf());
+        document.addEventListener('click', () => this._closePresetOverflow());
+        window.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') this._closePresetOverflow();
+        });
         window.addEventListener('resize', () => this._applyVisualState());
         window.addEventListener('beforeunload', () => {
             if (this.meterTimer) window.clearInterval(this.meterTimer);
+            this._stopWtf();
             this._clearLocalObjectUrl();
             this._closePopout();
         });
@@ -2279,7 +2455,7 @@ class RendererLabApp {
     _autoStart() {
         let attempts = 0;
         const tryStart = () => {
-            if (this.running) return;
+            if (this.running || this.starting) return;
             attempts++;
             this.start({ autoStart: true }).then(() => {
                 if (!this.running && attempts < 3) setTimeout(tryStart, attempts * 500);
@@ -2288,7 +2464,7 @@ class RendererLabApp {
         requestAnimationFrame(tryStart);
         if (document.readyState !== 'complete') {
             window.addEventListener('load', () => {
-                if (!this.running) tryStart();
+                if (!this.running && !this.starting) tryStart();
             }, { once: true });
         }
     }
@@ -2398,6 +2574,7 @@ class RendererLabApp {
     _paramChanged(key, structural = false) {
         this._persist();
         this._applyVisualState();
+        this._syncPresetToolbar();
         if (!this.running) return;
 
         if (key === 'sourceMode') {
@@ -2444,19 +2621,24 @@ class RendererLabApp {
     }
 
     async start(options = {}) {
-        if (this.running) return;
-        this.running = true;
+        if (this.running || this.starting) return;
+        this.starting = true;
+        const token = ++this.startToken;
         els.overlay.classList.add('hidden');
         els.togglePlay.textContent = 'Stop';
         try {
             if (this.params.sourceMode === 'static') {
                 const stats = await this.staticRuntime.start(this.params, options);
+                if (token !== this.startToken) return;
+                this.running = true;
                 await this._ensureStaticVideoPlayback();
                 this.setConnection('Static media');
                 this.setBackend(stats?.backend || 'static');
             } else {
                 this.staticRuntime.destroy();
                 this.streamRuntime.start(this.params, options);
+                if (token !== this.startToken) return;
+                this.running = true;
                 this.setBackend(this.params.backend === 'auto' ? 'stream canvas' : this.params.backend);
             }
         } catch (error) {
@@ -2465,6 +2647,8 @@ class RendererLabApp {
             this.running = false;
             els.overlay.classList.remove('hidden');
             els.togglePlay.textContent = 'Start';
+        } finally {
+            if (token === this.startToken) this.starting = false;
         }
         this.updateMeters();
         if (this.popout && !this.popout.closed) {
@@ -2473,6 +2657,8 @@ class RendererLabApp {
     }
 
     stop() {
+        this.startToken++;
+        this.starting = false;
         this.running = false;
         this._stopPopoutOutput();
         this.staticRuntime.destroy();
@@ -2933,15 +3119,279 @@ button:hover{background:#202a35}
         }
         const active = this._allPresets().find((p) => p.id === this.activePresetId);
         els.activePresetLabel.textContent = active?.name || 'Custom';
+        this._syncPresetToolbar();
+    }
+
+    _syncPresetToolbar() {
+        const active = this._allPresets().find((p) => p.id === this.activePresetId);
+        const selectedUserPreset = this._selectedUserPreset();
+        const selectedUserPresetDirty = selectedUserPreset ? this._isUserPresetDirty(selectedUserPreset) : false;
+        els.duplicatePreset.disabled = !active;
+        els.updatePreset.disabled = !selectedUserPresetDirty;
+        els.deletePreset.disabled = !selectedUserPreset;
+        els.exportPresets.disabled = this.userPresets.length === 0;
+    }
+
+    _togglePresetOverflow() {
+        if (els.presetOverflowMenu.hidden) this._openPresetOverflow();
+        else this._closePresetOverflow();
+    }
+
+    _openPresetOverflow() {
+        els.presetOverflowMenu.hidden = false;
+        els.morePresets.setAttribute('aria-expanded', 'true');
+    }
+
+    _closePresetOverflow() {
+        if (!els.presetOverflowMenu || els.presetOverflowMenu.hidden) return;
+        els.presetOverflowMenu.hidden = true;
+        els.morePresets.setAttribute('aria-expanded', 'false');
+    }
+
+    _savedUserPresetParams(preset) {
+        const params = normalizeParams({
+            ...DEFAULT_PARAMS,
+            ...(preset?.params || {})
+        });
+        params.transitionSeconds = Number(
+            preset?.transitionSeconds ??
+            preset?.params?.transitionSeconds ??
+            params.transitionSeconds
+        );
+        return renderPresetParams(params);
+    }
+
+    _isUserPresetDirty(preset = this._selectedUserPreset()) {
+        if (!preset) return false;
+        return stableJson(renderPresetParams(this.params)) !== stableJson(this._savedUserPresetParams(preset));
+    }
+
+    _currentSourceParams() {
+        const source = {};
+        for (const key of SOURCE_PARAM_KEYS) source[key] = this.params[key];
+        return source;
+    }
+
+    _baseForPreset(preset) {
+        if (!preset?.readonly) return this.params;
+        return {
+            ...DEFAULT_PARAMS,
+            ...this._currentSourceParams()
+        };
+    }
+
+    toggleWtf() {
+        if (this.wtfActive) this._stopWtf();
+        else this._startWtf();
+    }
+
+    _syncWtfButton() {
+        els.wtfButton.classList.toggle('active', this.wtfActive);
+        els.wtfButton.setAttribute('aria-pressed', this.wtfActive ? 'true' : 'false');
+    }
+
+    _startWtf() {
+        if (this.wtfActive) return;
+        this.wtfActive = true;
+        this.wtfToken++;
+        this.activePresetId = null;
+        this._syncWtfButton();
+        this._renderPresets();
+        els.activePresetLabel.textContent = 'WTF';
+        this._runWtfLoop(this.wtfToken);
+    }
+
+    _stopWtf() {
+        if (!this.wtfActive) return;
+        this.wtfActive = false;
+        this.wtfToken++;
+        this._syncWtfButton();
+        this._renderPresets();
+    }
+
+    async _runWtfLoop(token) {
+        while (this.wtfActive && token === this.wtfToken) {
+            if (!this.running) {
+                await this.start({ autoStart: true }).catch((error) => console.warn('[WTF] Start failed:', error));
+                if (this.starting) {
+                    await this._waitForStartIdle();
+                }
+            }
+            if (this.transitioning) {
+                await new Promise((resolve) => setTimeout(resolve, 120));
+                continue;
+            }
+
+            const seconds = randomBetween(1, 5);
+            const target = this._makeWtfTarget(seconds);
+            try {
+                await this._transitionTo(target, seconds);
+                this.activePresetId = null;
+                els.activePresetLabel.textContent = this.wtfActive ? 'WTF' : 'Custom';
+            } catch (error) {
+                console.warn('[WTF] Transition failed:', error);
+            }
+
+            if (this.wtfActive && token === this.wtfToken) {
+                await new Promise((resolve) => setTimeout(resolve, 80));
+            }
+        }
+        if (token === this.wtfToken) {
+            this.wtfActive = false;
+            this._syncWtfButton();
+        }
+    }
+
+    _makeWtfTarget(seconds) {
+        for (let attempt = 0; attempt < 16; attempt++) {
+            const target = this._randomWtfTarget(seconds);
+            if (this._isSafeWtfTarget(target)) return target;
+        }
+        return normalizeParams({
+            ...this.params,
+            transitionSeconds: seconds,
+            saturationBoost: randomBetween(0.8, 1.8),
+            contrastBoost: randomBetween(0.8, 1.8),
+            brightness: randomBetween(0.75, 1.25),
+            gamma: randomBetween(0.75, 1.45),
+            bgBlend: randomBetween(0.1, 0.45),
+            quantizeBits: randomInt(0, 3),
+            cols: randomInt(180, 560),
+            autoRows: true
+        }, { preserveBlob: true });
+    }
+
+    _randomWtfTarget(seconds) {
+        const target = { ...this.params, transitionSeconds: seconds };
+        const staticMode = target.sourceMode === 'static';
+
+        if (staticMode) {
+            target.backend = 'auto';
+        }
+
+        target.volume = snapToStep(randomBetween(0, 1), 0.01);
+        target.loop = true;
+        target.muted = randomBool(0.72);
+        target.statsOverlay = randomBool(0.85);
+
+        target.cols = randomInt(260, 760);
+        target.autoRows = true;
+        target.rows = 0;
+        const cellScale = randomInt(1, 5);
+        target.cellWidth = cellScale;
+        target.cellHeight = Math.max(2, Math.round(cellScale * 1.5));
+        target.aspectCorrection = 1;
+
+        target.saturationBoost = snapToStep(randomBetween(0.18, 2.75), 0.01);
+        target.contrastBoost = snapToStep(randomBetween(0.55, 2.45), 0.01);
+        target.brightness = snapToStep(randomBetween(0.48, 1.62), 0.01);
+        target.gamma = snapToStep(randomBetween(0.55, 2.35), 0.01);
+        target.bgBlend = snapToStep(randomBetween(0, 0.72), 0.01);
+        target.quantizeBits = randomInt(0, 5);
+
+        if (target.sourceMode === 'stream') {
+            target.mode = randomInt(1, 5);
+            target.pixel = randomBool(0.4);
+        } else {
+            target.pixel = false;
+        }
+
+        target.fps = randomInt(8, 48);
+        target.jitterAmount = snapToStep(randomBetween(0, 1), 0.01);
+        target.jitterSpeed = snapToStep(randomBetween(0, 4), 0.01);
+        target.sampleX = snapToStep(randomBetween(0.08, 0.92), 0.01);
+        target.sampleY = snapToStep(randomBetween(0.08, 0.92), 0.01);
+        target.smoothing = randomBool(0.5);
+
+        target.codec = randomChoice(['adaptive', 'legacy']);
+        target.codecQuality = randomChoice(['lossless', 'high', 'balanced', 'low']);
+        target.codecTolerance = target.codec === 'adaptive'
+            ? randomInt(0, 24)
+            : this.params.codecTolerance;
+        target.bufferSize = randomInt(1, 12);
+        target.maxBufferMultiplier = randomInt(2, 10);
+        target.lateDropThreshold = snapToStep(randomBetween(0.02, 0.35), 0.01);
+        target.futureWaitThreshold = snapToStep(randomBetween(0.01, 0.32), 0.01);
+        target.fpsCap = randomInt(12, 60);
+
+        const canvasBackend = backendKind(target) === 'canvas';
+        target.solidMode = canvasBackend ? randomBool(0.28) : randomBool(0.12);
+        target.glyphMode = target.solidMode ? false : randomBool(0.66);
+        target.charset = randomChoice(['point-click', 'asciline', 'blocks']);
+        target.fontFamily = randomChoice(['Courier New', 'monospace', 'Menlo', 'Consolas']);
+        target.minGlyphIntensity = randomInt(70, 230);
+
+        return normalizeParams(target, { preserveBlob: true });
+    }
+
+    _isSafeWtfTarget(target) {
+        if (target.brightness < 0.42) return false;
+        if (target.brightness > 1.75 && target.contrastBoost > 2.25 && target.gamma < 0.65) return false;
+        if (target.bgBlend > 0.78 && target.brightness < 0.8) return false;
+        if (target.solidMode && target.brightness < 0.62 && target.bgBlend > 0.58) return false;
+
+        if (target.sourceMode !== 'static') return true;
+        const rect = els.container.getBoundingClientRect();
+        const dpr = Math.max(1, window.devicePixelRatio || 1);
+        const width = Math.max(1, Math.floor(rect.width * dpr));
+        const height = Math.max(1, Math.floor(rect.height * dpr));
+        const snapshot = this._makeSoftwareTransitionSnapshot(target, width, height, {
+            maxCells: 18000,
+            sampleLimit: 420
+        });
+        return snapshot ? canvasHasSafeVisualSignal(snapshot) : true;
+    }
+
+    _waitForTransitionIdle(timeoutMs = 6000) {
+        if (!this.transitioning) return Promise.resolve(true);
+        const start = performance.now();
+        return new Promise((resolve) => {
+            const check = () => {
+                if (!this.transitioning) {
+                    resolve(true);
+                    return;
+                }
+                if (performance.now() - start >= timeoutMs) {
+                    resolve(false);
+                    return;
+                }
+                requestAnimationFrame(check);
+            };
+            requestAnimationFrame(check);
+        });
+    }
+
+    _waitForStartIdle(timeoutMs = 6000) {
+        if (!this.starting) return Promise.resolve(true);
+        const start = performance.now();
+        return new Promise((resolve) => {
+            const check = () => {
+                if (!this.starting) {
+                    resolve(true);
+                    return;
+                }
+                if (performance.now() - start >= timeoutMs) {
+                    resolve(false);
+                    return;
+                }
+                requestAnimationFrame(check);
+            };
+            requestAnimationFrame(check);
+        });
     }
 
     async applyPreset(id) {
         const preset = this._allPresets().find((p) => p.id === id);
-        if (!preset || this.transitioning) return;
+        if (this.wtfActive) this._stopWtf();
+        if (!preset) return;
+        if (this.transitioning) {
+            const ready = await this._waitForTransitionIdle();
+            if (!ready) return;
+        }
         const previousPresetId = this.activePresetId;
         const presetParams = stripSourceParams(preset.params);
         const target = normalizeParams(
-            { ...this.params, ...presetParams },
+            { ...this._baseForPreset(preset), ...presetParams },
             { preserveBlob: true }
         );
         const transitionSeconds = preset.transitionSeconds ?? this.params.transitionSeconds;
@@ -3090,7 +3540,7 @@ button:hover{background:#202a35}
     }
 
     _makeSoftwareTransitionSnapshot(params, width, height, options = {}) {
-        if (this.params.sourceMode !== 'static') return false;
+        if (params.sourceMode !== 'static') return false;
         const source = this._staticMediaSource();
         const frameCount = Number(this.staticRuntime.renderer?.frameCount ?? 0);
         try {
@@ -3123,7 +3573,7 @@ button:hover{background:#202a35}
                 renderer._renderFrame();
             }
             if (renderer?.device?.queue?.onSubmittedWorkDone) {
-                await renderer.device.queue.onSubmittedWorkDone().catch(() => {});
+                await settleWithTimeout(renderer.device.queue.onSubmittedWorkDone(), GPU_QUEUE_SETTLE_TIMEOUT_MS);
             }
             if (Number(renderer?.frameCount ?? startFrame) > startFrame) advanced = true;
             await new Promise((resolve) => requestAnimationFrame(resolve));
@@ -3321,20 +3771,34 @@ button:hover{background:#202a35}
 
     _updatePreset() {
         const preset = this._selectedUserPreset();
-        if (!preset) return;
+        if (!preset || !this._isUserPresetDirty(preset)) return;
         preset.params = renderPresetParams(this.params);
         preset.transitionSeconds = this.params.transitionSeconds;
         this._persistPresets();
         this._renderPresets();
     }
 
-    _deletePreset() {
+    async _deletePreset() {
         const preset = this._selectedUserPreset();
         if (!preset) return;
         if (!confirm(`Delete preset "${preset.name}"?`)) return;
         this.userPresets = this.userPresets.filter((p) => p.id !== preset.id);
         this.activePresetId = 'point-click-default';
         this._persistPresets();
+        const fallback = BUILTIN_PRESETS.find((item) => item.id === this.activePresetId);
+        if (fallback) {
+            const fallbackParams = stripSourceParams(fallback.params);
+            const target = normalizeParams(
+                { ...this._baseForPreset(fallback), ...fallbackParams },
+                { preserveBlob: true }
+            );
+            target.transitionSeconds = this.params.transitionSeconds;
+            try {
+                await this._transitionTo(target, fallback.transitionSeconds ?? this.params.transitionSeconds);
+            } catch (error) {
+                console.error(error);
+            }
+        }
         this._renderPresets();
     }
 
@@ -3374,6 +3838,9 @@ button:hover{background:#202a35}
                 transitionSeconds: Number(preset.transitionSeconds ?? this.params.transitionSeconds),
                 params: stripSourceParams(normalizeParams(preset.params || {}))
             }));
+            if (!this._allPresets().some((preset) => preset.id === this.activePresetId)) {
+                this.activePresetId = 'point-click-default';
+            }
             this._persistPresets();
             this._renderPresets();
         } catch (error) {

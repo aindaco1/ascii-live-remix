@@ -177,6 +177,7 @@ Use Podman for a reproducible development shell and Linux virtualenv on macOS. T
 - Build one local dev image with Python, FFmpeg, OpenCV dependencies, and Node 24 LTS for JavaScript codec checks.
 - Allow `NODE_MAJOR=26 scripts/podman_build.sh` for current-release smoke testing while keeping LTS as the default.
 - Create `.venv-linux/` from inside the container so dependency resolution does not depend on the host macOS Python/OpenSSL state.
+- Support supervised long-running renderer/static-server commands with `ASCILINE_RESTART=1 scripts/podman_run.sh ...`, restarting unexpected child-command exits until the wrapper is stopped.
 
 Primary commands:
 
