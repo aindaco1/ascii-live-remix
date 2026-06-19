@@ -19,6 +19,7 @@ cd "$ROOT"
 if [ "$#" -eq 0 ]; then
   set -- bash
 fi
+COMMAND=("$@")
 
 restart_requested() {
   case "$ASCILINE_RESTART" in
@@ -155,7 +156,7 @@ run_podman_container() {
 
 while true; do
   set +e
-  run_podman_container &
+  run_podman_container "${COMMAND[@]}" &
   podman_pid=$!
   wait "$podman_pid"
   status=$?
