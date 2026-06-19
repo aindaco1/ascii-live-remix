@@ -14,6 +14,7 @@ const TIFF_EXTENSIONS = ['.tif', '.tiff'];
 
 function detectMediaType(url) {
     const lower = url.toLowerCase();
+    if (lower.startsWith('camera://')) return 'camera';
     for (const ext of MEDIA_EXTENSIONS.video) {
         if (lower.endsWith(ext)) return 'video';
     }
@@ -57,7 +58,7 @@ function loadUTIF() {
  * Load a media source (video or image) and return a normalized interface
  * @param {string} url - URL of the media file
  * @param {Object} options - Options
- * @param {string} options.type - Force media type ('video' or 'image'), auto-detected if omitted
+ * @param {string} options.type - Force media type ('video', 'image', or 'camera'), auto-detected if omitted
  * @param {boolean} options.loop - Loop video (default: true)
  * @param {boolean} options.muted - Mute video (default: true)
  * @returns {Promise<MediaSource>} Resolved media source
@@ -65,11 +66,104 @@ function loadUTIF() {
 async function loadMediaSource(url, options = {}) {
     const type = options.type || detectMediaType(url);
 
-    if (type === 'video') {
+    if (type === 'camera') {
+        return loadCameraSource(options.stream, options);
+    } else if (type === 'video') {
         return loadVideoSource(url, options);
     } else {
         return loadImageSource(url, options);
     }
+}
+
+async function loadCameraSource(stream, options = {}) {
+    if (!stream) throw new Error('Camera stream is not available');
+
+    const video = document.createElement('video');
+    video.srcObject = stream;
+    video.autoplay = true;
+    video.loop = false;
+    video.muted = true;
+    video.playsInline = true;
+    video.style.display = 'none';
+    document.body.appendChild(video);
+
+    const track = stream.getVideoTracks?.()[0] || null;
+    const settings = track?.getSettings?.() || {};
+
+    await new Promise((resolve, reject) => {
+        let settled = false;
+        const finish = () => {
+            if (settled) return;
+            if (video.videoWidth > 0 && video.videoHeight > 0) {
+                settled = true;
+                cleanup();
+                resolve();
+            }
+        };
+        const timeout = setTimeout(() => {
+            if (settled) return;
+            if (video.videoWidth > 0 && video.videoHeight > 0) {
+                settled = true;
+                cleanup();
+                resolve();
+                return;
+            }
+            if (settings.width && settings.height) {
+                settled = true;
+                cleanup();
+                resolve();
+                return;
+            }
+            settled = true;
+            cleanup();
+            reject(new Error('Camera did not produce video dimensions'));
+        }, options.readyTimeoutMs || 3500);
+        const fail = () => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            reject(new Error('Camera video element failed'));
+        };
+        const cleanup = () => {
+            clearTimeout(timeout);
+            video.removeEventListener('loadedmetadata', finish);
+            video.removeEventListener('loadeddata', finish);
+            video.removeEventListener('canplay', finish);
+            video.removeEventListener('error', fail);
+        };
+        video.addEventListener('loadedmetadata', finish);
+        video.addEventListener('loadeddata', finish);
+        video.addEventListener('canplay', finish);
+        video.addEventListener('error', fail, { once: true });
+        video.play().then(finish).catch(() => finish());
+    });
+
+    const width = video.videoWidth || settings.width || 640;
+    const height = video.videoHeight || settings.height || 480;
+
+    return {
+        type: 'camera',
+        element: video,
+        canvas: null,
+        width,
+        height,
+        ready: true,
+        isVideo: true,
+        isImage: false,
+        isCamera: true,
+        stream,
+
+        play() { return video.play(); },
+        pause() { video.pause(); },
+        destroy() {
+            video.pause();
+            video.srcObject = null;
+            video.remove();
+            if (options.stopTracks !== false) {
+                stream.getTracks?.().forEach((streamTrack) => streamTrack.stop());
+            }
+        }
+    };
 }
 
 async function loadVideoSource(url, options = {}) {

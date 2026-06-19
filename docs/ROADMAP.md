@@ -32,7 +32,7 @@ The project is not adopting the `ascii-point-and-click` game UI. This fork shoul
    - Client receives decoded frames and hands them to the active renderer backend.
 
 2. **Static Mode**
-   - Source: browser-native media (`video`, `image`, or canvas-backed TIFF decode).
+   - Source: browser-native media (`video`, `image`, local `camera`, or canvas-backed TIFF decode).
    - No Python server required.
    - Uses the copied `ascii-point-and-click` media source and GPU sampling architecture.
    - Can be served by any static HTTP server.
@@ -99,11 +99,20 @@ Use the `ascii-point-and-click` renderer defaults:
 
 - **Source**
   - stream/static
-  - media URL
-  - media type
+  - built-in demo video/image selection
+  - custom local video/image file picker with Present, Missing, or Needs access status
+  - local camera selection with permission/status state
+  - active source name/status
   - loop
   - muted
   - volume
+
+- **Camera**
+  - device
+  - facing mode
+  - capture resolution
+  - capture FPS
+  - mirror preview
 
 - **Backend**
   - auto
@@ -523,6 +532,9 @@ Reference docs used for the initial plan:
 - Keep any derived transition-test clips out of the visible Source menu unless they add distinct coverage.
 - Support automatic media type detection without requiring a user-facing media type selector.
 - Support custom local video/image files as a single-select source-list item with Present, Missing, or Needs access status.
+- Support local webcam/camera as a browser-only source through `MediaDevices.getUserMedia`.
+- Keep camera frames local to the browser; do not upload or route them through the Python server.
+- Expose camera device, facing mode, capture size, FPS, and mirroring only when Camera is the active static source.
 - Render through copied WebGPU/WebGL2 renderer.
 - Keep Canvas fallback path available.
 - Allow source URL changes without page reload.
@@ -585,12 +597,15 @@ New:
 - Static browser smoke test with generated or copied test media.
 - Screenshot checks for the lab UI.
 - Param update checks through DOM events.
+- Fake-device camera smoke test for Camera selection, permission/status UI, device constraints, mirror toggle, presets, and fallback backends.
 - WebSocket control-message test once server handling is in place.
 
 ## Open Technical Risks
 
 - Browser support for WebGPU varies; WebGL2 fallback must remain reliable.
 - Static browser mode cannot load arbitrary local files without user selection or HTTP serving.
+- Local camera capture requires a secure context such as `localhost` and explicit browser permission; device labels may remain blank until permission is granted.
+- Desktop packaging will need Tauri window/camera permission handling before camera support can be considered production-ready outside the browser.
 - Some WebSocket changes are not truly soft because OpenCV decoder resize changes require reinitialization.
 - `ascii-point-and-click` assets include glyph/LUT files that are not part of the current quality target; keep them vendored for future experimentation but do not block the WebGPU/WebGL block-rendering path on them.
 - TIFF support depends on UTIF loaded from CDN unless vendored later.
@@ -600,6 +615,7 @@ New:
 - The repo documents the plan and architecture.
 - The app launches into a renderer lab, not a blog page.
 - Users can switch between stream and static modes.
+- Users can render built-in media, custom local files, and a local camera source without server upload.
 - Users can tune exposed renderer, stream, and performance parameters live where technically possible.
 - Users can create, save, import/export, and apply presets.
 - Preset switches animate gracefully using the configured transition time.

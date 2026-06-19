@@ -26,7 +26,7 @@ struct Params {
     sampleX: f32,
     sampleY: f32,
     time: f32,
-    _pad0: u32,
+    mirrorX: u32,
     _pad1: u32,
 };
 
@@ -69,7 +69,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let jitterY = (hash(seed + vec2<f32>(37.0, 91.0)) - 0.5) * cellH * params.jitterAmount;
     let cellCenterX = (f32(cx) + params.sampleX) * f32(params.srcW) / f32(params.cols);
     let cellCenterY = (f32(cy) + params.sampleY) * f32(params.srcH) / f32(params.rows);
-    let sampleX = clamp(i32(cellCenterX + jitterX), 0, i32(params.srcW) - 1);
+    var sampleX = clamp(i32(cellCenterX + jitterX), 0, i32(params.srcW) - 1);
+    if (params.mirrorX != 0u) {
+        sampleX = i32(params.srcW) - 1 - sampleX;
+    }
     let sampleY = clamp(i32(cellCenterY + jitterY), 0, i32(params.srcH) - 1);
 
     let c = textureLoad(srcTex, vec2<i32>(sampleX, sampleY));
@@ -100,7 +103,7 @@ struct Params {
     sampleX: f32,
     sampleY: f32,
     time: f32,
-    _pad0: u32,
+    mirrorX: u32,
     _pad1: u32,
 };
 
@@ -146,7 +149,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     let baseCenterX = (f32(cx) + params.sampleX) * f32(params.srcW) / f32(params.cols);
     let baseCenterY = (f32(cy) + params.sampleY) * f32(params.srcH) / f32(params.rows);
-    let sampleX = clamp(i32(baseCenterX + jitterX), 0, i32(params.srcW) - 1);
+    var sampleX = clamp(i32(baseCenterX + jitterX), 0, i32(params.srcW) - 1);
+    if (params.mirrorX != 0u) {
+        sampleX = i32(params.srcW) - 1 - sampleX;
+    }
     let sampleY = clamp(i32(baseCenterY + jitterY), 0, i32(params.srcH) - 1);
 
     let c = textureLoad(srcTex, vec2<i32>(sampleX, sampleY), 0);
@@ -236,6 +242,7 @@ export class WebGPURenderer {
         this.smoothing = options.smoothing !== false;
         this.cellWidth = options.cellWidth || 8;
         this.cellHeight = options.cellHeight || 12;
+        this.mirrorX = options.mirrorX === true;
 
         this.running = false;
         this.animationId = null;
@@ -408,6 +415,7 @@ export class WebGPURenderer {
         pv.setFloat32(56, this.sampleX, true);
         pv.setFloat32(60, this.sampleY, true);
         pv.setFloat32(64, this.frameCount / Math.max(1, this.fps), true);
+        pv.setUint32(68, this.mirrorX ? 1 : 0, true);
         this.device.queue.writeBuffer(this.paramsBuffer, 0, paramsData);
 
         // Render params

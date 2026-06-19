@@ -4,8 +4,8 @@
  * Supports both video and image media sources.
  */
 
-import { WebGPURenderer } from './webgpu/webgpu-renderer.js';
-import { WebGL2Renderer } from './webgl2/webgl2-renderer.js';
+import { WebGPURenderer } from './webgpu/webgpu-renderer.js?v=20260618-camera-source';
+import { WebGL2Renderer } from './webgl2/webgl2-renderer.js?v=20260618-camera-source';
 
 let capabilities = null;
 

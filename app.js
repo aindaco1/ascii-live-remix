@@ -1,5 +1,5 @@
-import { detectMediaType, loadMediaSource } from './renderers/gpu/media-source.js?v=20260617-live-renderer-crossfade';
-import { createRenderer, detectCapabilities } from './renderers/gpu/ascii/renderer/index.js?v=20260617-live-renderer-crossfade';
+import { detectMediaType, loadMediaSource } from './renderers/gpu/media-source.js?v=20260618-camera-source';
+import { createRenderer, detectCapabilities } from './renderers/gpu/ascii/renderer/index.js?v=20260618-camera-source';
 
 const $ = (id) => document.getElementById(id);
 
@@ -51,6 +51,8 @@ const CUSTOM_HANDLE_DB = 'asciline-remix-custom-source-db';
 const CUSTOM_HANDLE_STORE = 'handles';
 const CUSTOM_HANDLE_ID = 'custom-media';
 const CUSTOM_SOURCE_ID = 'custom-file';
+const CAMERA_SOURCE_ID = 'camera';
+const CAMERA_MEDIA_URL = 'camera://local';
 const CUSTOM_MEDIA_PICKER_OPTIONS = {
     multiple: false,
     excludeAcceptAllOption: false,
@@ -69,6 +71,11 @@ const DEFAULT_PARAMS = {
     mediaUrl: 'media/point-click-test-30s.mp4',
     mediaType: 'video',
     sourceName: 'Demo Video 1',
+    cameraDeviceId: '',
+    cameraFacingMode: 'any',
+    cameraResolution: 'auto',
+    cameraFps: 30,
+    cameraMirror: true,
     loop: true,
     muted: true,
     volume: 1,
@@ -113,6 +120,14 @@ const SOURCE_PRESETS = [
     { id: 'demo-image', name: 'Demo Image', mediaUrl: 'media/demo.svg', mediaType: 'image' },
     { id: 'demo-video-1', name: 'Demo Video 1', mediaUrl: 'media/point-click-test-30s.mp4', mediaType: 'video' },
     { id: 'demo-video-2', name: 'Demo Video 2', mediaUrl: 'media/point-click-test2.mp4', mediaType: 'video' }
+];
+
+const CAMERA_RESOLUTION_OPTIONS = [
+    ['auto', 'Auto'],
+    ['640x480', '480p'],
+    ['1280x720', '720p'],
+    ['1920x1080', '1080p'],
+    ['3840x2160', '4K']
 ];
 
 const CODEC_TOLERANCE = {
@@ -706,6 +721,16 @@ const CONTROL_GROUPS = [
         ]
     },
     {
+        title: 'Camera',
+        controls: [
+            { key: 'cameraDeviceId', label: 'Device', type: 'select', options: [['', 'Default camera']] },
+            { key: 'cameraFacingMode', label: 'Facing', type: 'select', options: [['any', 'Any'], ['user', 'Front'], ['environment', 'Rear']] },
+            { key: 'cameraResolution', label: 'Capture size', type: 'select', options: CAMERA_RESOLUTION_OPTIONS },
+            { key: 'cameraFps', label: 'Capture FPS', type: 'range', min: 1, max: 60, step: 1 },
+            { key: 'cameraMirror', label: 'Mirror', type: 'checkbox' }
+        ]
+    },
+    {
         title: 'Stream',
         controls: [
             { key: 'codec', label: 'Codec', type: 'select', options: [['adaptive', 'Adaptive'], ['legacy', 'Legacy raw']] },
@@ -770,6 +795,10 @@ const STATIC_REBUILD_KEYS = new Set([
     'backend',
     'mediaUrl',
     'mediaType',
+    'cameraDeviceId',
+    'cameraFacingMode',
+    'cameraResolution',
+    'cameraFps',
     'cols',
     'rows',
     'autoRows',
@@ -781,8 +810,9 @@ const STATIC_REBUILD_KEYS = new Set([
     'glyphMode',
     'fontFamily'
 ]);
-const STATIC_SOURCE_KEYS = new Set(['sourceMode', 'mediaUrl', 'mediaType']);
-const SOURCE_PARAM_KEYS = new Set(['sourceMode', 'mediaUrl', 'mediaType', 'sourceName']);
+const STATIC_SOURCE_KEYS = new Set(['sourceMode', 'mediaUrl', 'mediaType', 'cameraDeviceId', 'cameraFacingMode', 'cameraResolution', 'cameraFps']);
+const CAMERA_SOURCE_PARAM_KEYS = new Set(['cameraDeviceId', 'cameraFacingMode', 'cameraResolution', 'cameraFps', 'cameraMirror']);
+const SOURCE_PARAM_KEYS = new Set(['sourceMode', 'mediaUrl', 'mediaType', 'sourceName', ...CAMERA_SOURCE_PARAM_KEYS]);
 const STATIC_GPU_BACKENDS = new Set(['auto', 'webgpu', 'webgl2']);
 const STATIC_CANVAS_BACKENDS = new Set(['canvas2d', 'pixel-canvas']);
 
@@ -816,6 +846,12 @@ const CONTROL_APPLIES = {
     sampleY: ({ params, kind }) => params.sourceMode === 'static' && kind === 'gpu',
     smoothing: ({ params }) => params.sourceMode === 'static',
 
+    cameraDeviceId: ({ params }) => isCameraParams(params),
+    cameraFacingMode: ({ params }) => isCameraParams(params),
+    cameraResolution: ({ params }) => isCameraParams(params),
+    cameraFps: ({ params }) => isCameraParams(params),
+    cameraMirror: ({ params }) => isCameraParams(params),
+
     codec: ({ params }) => params.sourceMode === 'stream',
     codecQuality: ({ params }) => params.sourceMode === 'stream' && params.codec === 'adaptive',
     codecTolerance: ({ params }) => params.sourceMode === 'stream' && params.codec === 'adaptive',
@@ -825,10 +861,10 @@ const CONTROL_APPLIES = {
     futureWaitThreshold: ({ params }) => params.sourceMode === 'stream',
     fpsCap: ({ params }) => params.sourceMode === 'stream',
 
-    glyphMode: ({ params, kind }) => kind !== 'gpu' && !params.pixel && (params.sourceMode === 'static' || params.mode > 1),
-    solidMode: ({ params, kind }) => kind !== 'gpu' && !params.pixel && (params.sourceMode === 'static' || params.mode > 1),
-    charset: ({ params, kind }) => kind !== 'gpu' && params.glyphMode && !params.solidMode && !params.pixel && (params.sourceMode === 'static' || params.mode > 1),
-    fontFamily: ({ params, kind }) => kind !== 'gpu' && params.glyphMode && !params.solidMode && !params.pixel && (params.sourceMode === 'static' || params.mode > 1),
+    glyphMode: ({ params, kind }) => kind !== 'gpu' && !usesPixelCanvas(params) && (params.sourceMode === 'static' || params.mode > 1),
+    solidMode: ({ params, kind }) => kind !== 'gpu' && !usesPixelCanvas(params) && (params.sourceMode === 'static' || params.mode > 1),
+    charset: ({ params, kind }) => kind !== 'gpu' && params.glyphMode && !params.solidMode && !usesPixelCanvas(params) && (params.sourceMode === 'static' || params.mode > 1),
+    fontFamily: ({ params, kind }) => kind !== 'gpu' && params.glyphMode && !params.solidMode && !usesPixelCanvas(params) && (params.sourceMode === 'static' || params.mode > 1),
     minGlyphIntensity: () => false
 };
 
@@ -950,6 +986,14 @@ function findSourcePreset(mediaUrl, mediaType) {
     );
 }
 
+function isCameraUrl(url) {
+    return String(url || '').startsWith('camera://');
+}
+
+function isCameraParams(params) {
+    return params?.sourceMode === 'static' && params?.mediaType === 'camera';
+}
+
 function normalizeParams(params, options = {}) {
     const { preserveBlob = false } = options;
     const out = { ...DEFAULT_PARAMS, ...params };
@@ -960,25 +1004,36 @@ function normalizeParams(params, options = {}) {
         out.sourceName = DEFAULT_PARAMS.sourceName;
         hasRuntimeBlob = false;
     }
+    if (isCameraUrl(out.mediaUrl)) {
+        out.mediaUrl = CAMERA_MEDIA_URL;
+        out.mediaType = 'camera';
+        out.sourceName = out.sourceName || 'Camera';
+    }
     if (out.mediaUrl === 'media/point-click-test.mp4' && (!out.sourceName || out.sourceName === 'Demo Video 1' || out.sourceName === 'Point and Click Test')) {
         out.mediaUrl = DEFAULT_PARAMS.mediaUrl;
         out.mediaType = DEFAULT_PARAMS.mediaType;
         out.sourceName = DEFAULT_PARAMS.sourceName;
     }
-    if (!['auto', 'image', 'video'].includes(out.mediaType)) out.mediaType = mediaTypeFromName(out.mediaUrl);
+    if (!['auto', 'image', 'video', 'camera'].includes(out.mediaType)) out.mediaType = mediaTypeFromName(out.mediaUrl);
     const matchedSource = hasRuntimeBlob ? null : findSourcePreset(out.mediaUrl, out.mediaType);
     if (matchedSource && out.mediaType === 'auto') out.mediaType = matchedSource.mediaType;
-    out.sourceName = matchedSource?.name || out.sourceName || sourceNameFromUrl(out.mediaUrl);
+    out.sourceName = isCameraUrl(out.mediaUrl) ? 'Camera' : matchedSource?.name || out.sourceName || sourceNameFromUrl(out.mediaUrl);
     out.mode = Number(out.mode);
     out.cols = Number(out.cols);
     out.rows = Number(out.rows);
     out.cellWidth = Number(out.cellWidth);
     out.cellHeight = Number(out.cellHeight);
+    out.cameraDeviceId = String(out.cameraDeviceId || '');
+    if (!['any', 'user', 'environment'].includes(out.cameraFacingMode)) out.cameraFacingMode = 'any';
+    if (!CAMERA_RESOLUTION_OPTIONS.some(([value]) => value === out.cameraResolution)) out.cameraResolution = 'auto';
+    out.cameraFps = clamp(Number(out.cameraFps || DEFAULT_PARAMS.cameraFps), 1, 60);
+    out.cameraMirror = Boolean(out.cameraMirror);
     out.codecTolerance = CODEC_TOLERANCE[out.codecQuality] ?? Number(out.codecTolerance || 0);
     return out;
 }
 
 function sourceNameFromUrl(url) {
+    if (isCameraUrl(url)) return 'Camera';
     const match = findSourcePreset(url);
     if (match) return match.name;
     try {
@@ -991,6 +1046,7 @@ function sourceNameFromUrl(url) {
 }
 
 function mediaTypeFromName(name) {
+    if (isCameraUrl(name)) return 'camera';
     return detectMediaType(String(name || ''));
 }
 
@@ -998,6 +1054,47 @@ function mediaTypeFromFile(file) {
     if (file.type?.startsWith('video/')) return 'video';
     if (file.type?.startsWith('image/')) return 'image';
     return mediaTypeFromName(file.name);
+}
+
+function parseCameraResolution(value) {
+    const match = String(value || '').match(/^(\d+)x(\d+)$/);
+    if (!match) return null;
+    return { width: Number(match[1]), height: Number(match[2]) };
+}
+
+function cameraConstraintKey(params) {
+    return stableJson({
+        deviceId: params.cameraDeviceId || '',
+        facingMode: params.cameraFacingMode || 'any',
+        resolution: params.cameraResolution || 'auto',
+        fps: Math.round(Number(params.cameraFps || DEFAULT_PARAMS.cameraFps))
+    });
+}
+
+function cameraConstraintsFromParams(params) {
+    const video = {};
+    if (params.cameraDeviceId) {
+        video.deviceId = { exact: params.cameraDeviceId };
+    } else if (params.cameraFacingMode && params.cameraFacingMode !== 'any') {
+        video.facingMode = { ideal: params.cameraFacingMode };
+    }
+
+    const resolution = parseCameraResolution(params.cameraResolution);
+    if (resolution) {
+        video.width = { ideal: resolution.width };
+        video.height = { ideal: resolution.height };
+    }
+
+    const frameRate = clamp(Math.round(Number(params.cameraFps || DEFAULT_PARAMS.cameraFps)), 1, 60);
+    video.frameRate = { ideal: frameRate, max: frameRate };
+    return { audio: false, video: Object.keys(video).length ? video : true };
+}
+
+function cameraErrorStatus(error) {
+    if (!navigator.mediaDevices?.getUserMedia) return { status: 'unsupported', message: 'Camera unsupported' };
+    if (error?.name === 'NotAllowedError' || error?.name === 'SecurityError') return { status: 'denied', message: 'Camera denied' };
+    if (error?.name === 'NotFoundError' || error?.name === 'OverconstrainedError') return { status: 'missing', message: 'No camera found' };
+    return { status: 'error', message: error?.message || 'Camera failed' };
 }
 
 function fileSizeLabel(size) {
@@ -1024,12 +1121,16 @@ function customSourceMetaFromFile(file) {
 }
 
 function persistedParams(params) {
-    if (!String(params.mediaUrl || '').startsWith('blob:')) return params;
+    if (!String(params.mediaUrl || '').startsWith('blob:') && !isCameraParams(params)) return params;
     return {
         ...params,
         mediaUrl: DEFAULT_PARAMS.mediaUrl,
         mediaType: DEFAULT_PARAMS.mediaType,
-        sourceName: DEFAULT_PARAMS.sourceName
+        sourceName: DEFAULT_PARAMS.sourceName,
+        cameraDeviceId: DEFAULT_PARAMS.cameraDeviceId,
+        cameraFacingMode: DEFAULT_PARAMS.cameraFacingMode,
+        cameraResolution: DEFAULT_PARAMS.cameraResolution,
+        cameraFps: DEFAULT_PARAMS.cameraFps
     };
 }
 
@@ -1044,11 +1145,13 @@ function renderPresetParams(params) {
 }
 
 function forcedMediaType(params) {
+    if (params.mediaType === 'camera') return 'camera';
     return params.mediaType === 'auto' ? undefined : params.mediaType;
 }
 
 function isLikelyVideo(params) {
     if (params.sourceMode !== 'static') return false;
+    if (params.mediaType === 'camera') return false;
     if (params.mediaType === 'video') return true;
     if (params.mediaType === 'image') return false;
     return detectMediaType(params.mediaUrl) === 'video';
@@ -1061,6 +1164,10 @@ function backendKind(params) {
     return 'gpu';
 }
 
+function usesPixelCanvas(params) {
+    return Boolean(params?.pixel || params?.backend === 'pixel-canvas');
+}
+
 function videoElementFromSource(source) {
     const element = source?.element;
     return source?.isVideo && element?.tagName === 'VIDEO' ? element : null;
@@ -1068,6 +1175,7 @@ function videoElementFromSource(source) {
 
 function captureVideoPlaybackState(source, params, nextParams = params) {
     if (params.sourceMode !== 'static' || nextParams.sourceMode !== 'static') return null;
+    if (params.mediaType === 'camera' || nextParams.mediaType === 'camera') return null;
     if (params.mediaUrl !== nextParams.mediaUrl || params.mediaType !== nextParams.mediaType) return null;
     const video = videoElementFromSource(source);
     if (!video) return null;
@@ -1278,7 +1386,7 @@ function renderSoftwareCellSnapshot(source, params, targetWidth, targetHeight, f
     if (!sourceElement || sourceWidth <= 0 || sourceHeight <= 0 || targetWidth <= 0 || targetHeight <= 0) return null;
 
     let cols = Math.max(1, Math.round(params.cols || DEFAULT_PARAMS.cols));
-    let rows = computeRows(params, sourceWidth, sourceHeight, false);
+    let rows = computeRows(params, sourceWidth, sourceHeight, usesPixelCanvas(params));
     const maxCells = options.maxCells || Infinity;
     if (Number.isFinite(maxCells) && cols * rows > maxCells) {
         const scale = Math.sqrt(maxCells / (cols * rows));
@@ -1317,7 +1425,8 @@ function renderSoftwareCellSnapshot(source, params, targetWidth, targetHeight, f
             const seedY = row + time * jitterSpeed * 11.71;
             const jitterX = (shaderHash(seedX, seedY) - 0.5) * sourceCellWidth * jitterAmount;
             const jitterY = (shaderHash(seedX + 37, seedY + 91) - 0.5) * sourceCellHeight * jitterAmount;
-            const sourceX = clamp(Math.trunc((col + sampleXOffset) * sourceWidth / cols + jitterX), 0, sourceWidth - 1);
+            let sourceX = clamp(Math.trunc((col + sampleXOffset) * sourceWidth / cols + jitterX), 0, sourceWidth - 1);
+            if (params.mediaType === 'camera' && params.cameraMirror) sourceX = sourceWidth - 1 - sourceX;
             const sourceY = clamp(Math.trunc((row + sampleYOffset) * sourceHeight / rows + jitterY), 0, sourceHeight - 1);
             const sx = clamp(Math.trunc(sourceX * sampleWidth / sourceWidth), 0, sampleWidth - 1);
             const sy = clamp(Math.trunc(sourceY * sampleHeight / sourceHeight), 0, sampleHeight - 1);
@@ -1454,11 +1563,13 @@ class CanvasStaticRenderer {
         this.fpsFrameCount = 0;
         this.lastFpsUpdate = 0;
         this.currentFps = 0;
+        this.ownsSource = true;
     }
 
     async start(params, options = {}) {
         this.params = { ...params };
-        this.source = await loadMediaSource(params.mediaUrl, {
+        this.ownsSource = options.ownsSource !== false;
+        this.source = options.source || await loadMediaSource(params.mediaUrl, {
             type: forcedMediaType(params),
             loop: params.loop,
             muted: params.muted
@@ -1482,6 +1593,7 @@ class CanvasStaticRenderer {
         const needsResize = params.cols !== this.params.cols ||
             params.rows !== this.params.rows ||
             params.autoRows !== this.params.autoRows ||
+            params.backend !== this.params.backend ||
             params.cellWidth !== this.params.cellWidth ||
             params.cellHeight !== this.params.cellHeight ||
             params.pixel !== this.params.pixel ||
@@ -1498,7 +1610,7 @@ class CanvasStaticRenderer {
     _configureCanvas() {
         const sw = this.source?.width || 640;
         const sh = this.source?.height || 360;
-        this.rows = computeRows(this.params, sw, sh, this.params.pixel);
+        this.rows = computeRows(this.params, sw, sh, usesPixelCanvas(this.params));
         this.canvas.width = this.params.cols * this.params.cellWidth;
         this.canvas.height = this.rows * this.params.cellHeight;
         this.canvas.style.aspectRatio = `${sw} / ${sh}`;
@@ -1538,7 +1650,15 @@ class CanvasStaticRenderer {
         const sourceEl = this.source.canvas || this.source.element;
         if (!sourceEl) return;
         try {
-            this.offctx.drawImage(sourceEl, 0, 0, this.params.cols, this.rows);
+            if (this.params.mediaType === 'camera' && this.params.cameraMirror) {
+                this.offctx.save();
+                this.offctx.translate(this.params.cols, 0);
+                this.offctx.scale(-1, 1);
+                this.offctx.drawImage(sourceEl, 0, 0, this.params.cols, this.rows);
+                this.offctx.restore();
+            } else {
+                this.offctx.drawImage(sourceEl, 0, 0, this.params.cols, this.rows);
+            }
         } catch {
             return;
         }
@@ -1554,7 +1674,7 @@ class CanvasStaticRenderer {
                 const i = (y * this.params.cols + x) * 4;
                 const [r, g, b] = processColor(data[i], data[i + 1], data[i + 2], this.params);
                 ctx.fillStyle = `rgb(${r},${g},${b})`;
-                if (this.params.pixel || this.params.solidMode || !this.params.glyphMode) {
+                if (usesPixelCanvas(this.params) || this.params.solidMode || !this.params.glyphMode) {
                     ctx.fillRect(x * this.params.cellWidth, y * this.params.cellHeight, this.params.cellWidth, this.params.cellHeight);
                 } else {
                     const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
@@ -1567,7 +1687,7 @@ class CanvasStaticRenderer {
 
     getStats() {
         return {
-            backend: this.params.pixel || this.params.solidMode ? 'pixel-canvas' : 'canvas2d',
+            backend: usesPixelCanvas(this.params) || this.params.solidMode ? 'pixel-canvas' : 'canvas2d',
             sourceType: this.source?.type || 'static',
             cols: this.params.cols,
             rows: this.rows,
@@ -1580,7 +1700,7 @@ class CanvasStaticRenderer {
     destroy() {
         this.running = false;
         if (this.raf) this.window.cancelAnimationFrame(this.raf);
-        this.source?.destroy?.();
+        if (this.ownsSource) this.source?.destroy?.();
         this.targetElement.innerHTML = '';
     }
 }
@@ -1639,6 +1759,7 @@ class StaticRuntime {
             cellHeight: params.cellHeight,
             solidMode: params.solidMode,
             glyphMode: params.glyphMode,
+            mirrorX: params.mediaType === 'camera' && params.cameraMirror,
             preserveDrawingBuffer: true,
             preferredBackend
         };
@@ -1665,6 +1786,7 @@ class StaticRuntime {
         renderer.smoothing = params.smoothing;
         renderer.cellWidth = params.cellWidth;
         renderer.cellHeight = params.cellHeight;
+        renderer.mirrorX = params.mediaType === 'camera' && params.cameraMirror;
         if (renderer._applySourceSmoothing) renderer._applySourceSmoothing();
         if (renderer.canvas) {
             renderer.canvas.style.filter = 'none';
@@ -1686,20 +1808,17 @@ class StaticRuntime {
         const layer = this._makeRendererLayer('renderer-buffer-current');
 
         if (this.usingCanvasFallback) {
+            const source = await this.app.loadStaticSource(params, options);
             const renderer = new CanvasStaticRenderer(layer);
             this.renderer = renderer;
-            await renderer.start(params, options);
+            await renderer.start(params, { ...options, source, ownsSource: true });
             this.mediaUrl = params.mediaUrl;
             this.mediaType = params.mediaType;
             return renderer.getStats();
         }
 
         try {
-            this.source = await loadMediaSource(params.mediaUrl, {
-                type: forcedMediaType(params),
-                loop: params.loop,
-                muted: params.muted
-            });
+            this.source = await this.app.loadStaticSource(params, options);
             this.mediaUrl = params.mediaUrl;
             this.mediaType = params.mediaType;
             const renderer = await createRenderer(this._rendererOptions(params, layer));
@@ -1710,13 +1829,13 @@ class StaticRuntime {
             return renderer.getStats();
         } catch (error) {
             console.warn('[StaticRuntime] GPU renderer failed, falling back to canvas:', error);
-            this.source?.destroy?.();
-            this.source = null;
             this.usingCanvasFallback = true;
             layer.innerHTML = '';
             const renderer = new CanvasStaticRenderer(layer);
             this.renderer = renderer;
-            await renderer.start({ ...params, backend: 'canvas2d' }, options);
+            const source = this.source || await this.app.loadStaticSource(params, options);
+            this.source = null;
+            await renderer.start({ ...params, backend: 'canvas2d' }, { ...options, source, ownsSource: true });
             this.mediaUrl = params.mediaUrl;
             this.mediaType = params.mediaType;
             return renderer.getStats();
@@ -2211,6 +2330,11 @@ class RendererLabApp {
         this.customFileHandle = null;
         this.customSourceMeta = parseStoredJson(CUSTOM_SOURCE_KEY, null);
         this.customSourceStatus = this.customSourceMeta ? 'missing' : 'empty';
+        this.cameraDevices = [];
+        this.cameraStream = null;
+        this.cameraConstraintKey = null;
+        this.cameraStatus = navigator.mediaDevices?.getUserMedia ? 'needs-access' : 'unsupported';
+        this.cameraError = '';
         this.wtfActive = false;
         this.wtfToken = 0;
     }
@@ -2218,9 +2342,10 @@ class RendererLabApp {
     async init() {
         await this._detectBackends();
         await this._restoreCustomSource();
-        this._renderSourceList();
         this._buildControls();
         this._bindEvents();
+        await this._refreshCameraDevices();
+        this._renderSourceList();
         this._renderPresets();
         this._syncInputs();
         this._applyVisualState();
@@ -2277,6 +2402,175 @@ class RendererLabApp {
         this._renderSourceList();
     }
 
+    async _refreshCameraDevices(options = {}) {
+        if (!navigator.mediaDevices?.enumerateDevices) {
+            this.cameraDevices = [];
+            this.cameraStatus = 'unsupported';
+            this.cameraError = 'Camera unsupported';
+            this._syncCameraDeviceOptions();
+            if (options.render !== false) this._renderSourceList();
+            return;
+        }
+
+        try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            this.cameraDevices = devices.filter((device) => device.kind === 'videoinput');
+            if (this.cameraStream && this._cameraStreamActive()) this.cameraStatus = 'ready';
+            else if (this.cameraDevices.length === 0 && this.cameraStatus !== 'needs-access') this.cameraStatus = 'missing';
+            this.cameraError = '';
+        } catch (error) {
+            const status = cameraErrorStatus(error);
+            this.cameraDevices = [];
+            this.cameraStatus = status.status;
+            this.cameraError = status.message;
+        }
+
+        this._syncCameraDeviceOptions();
+        if (options.render !== false) this._renderSourceList();
+    }
+
+    _syncCameraDeviceOptions() {
+        const entry = this.controlInputs.get('cameraDeviceId');
+        if (!entry) return;
+
+        const input = entry.input;
+        const selected = this.params.cameraDeviceId || '';
+        const options = [['', 'Default camera']];
+        this.cameraDevices.forEach((device, index) => {
+            options.push([device.deviceId, device.label || `Camera ${index + 1}`]);
+        });
+        if (selected && !options.some(([value]) => value === selected)) {
+            options.push([selected, 'Selected camera']);
+        }
+
+        input.innerHTML = '';
+        for (const [value, label] of options) {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = label;
+            input.appendChild(option);
+        }
+        input.value = selected;
+        this._syncControlValue('cameraDeviceId');
+    }
+
+    _cameraDeviceLabel(deviceId = this.params.cameraDeviceId) {
+        if (!deviceId) return 'Default camera';
+        const index = this.cameraDevices.findIndex((device) => device.deviceId === deviceId);
+        if (index >= 0) return this.cameraDevices[index].label || `Camera ${index + 1}`;
+        return 'Selected camera';
+    }
+
+    _cameraStreamActive() {
+        return Boolean(this.cameraStream?.getVideoTracks?.().some((track) => track.readyState === 'live'));
+    }
+
+    _stopCameraStream() {
+        if (!this.cameraStream) return;
+        this.cameraStream.getTracks?.().forEach((track) => track.stop());
+        this.cameraStream = null;
+        this.cameraConstraintKey = null;
+        if (this.cameraStatus === 'ready' || this.cameraStatus === 'requesting') this.cameraStatus = 'needs-access';
+        this._renderSourceList();
+    }
+
+    async _ensureCameraStream(params = this.params) {
+        if (!navigator.mediaDevices?.getUserMedia) {
+            this.cameraStatus = 'unsupported';
+            this.cameraError = 'Camera unsupported';
+            this._renderSourceList();
+            throw new Error(this.cameraError);
+        }
+
+        const key = cameraConstraintKey(params);
+        if (this._cameraStreamActive() && this.cameraConstraintKey === key) return this.cameraStream;
+
+        this._stopCameraStream();
+        this.cameraStatus = 'requesting';
+        this.cameraError = '';
+        this._renderSourceList();
+        this.setConnection('Requesting camera');
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia(cameraConstraintsFromParams(params));
+            this.cameraStream = stream;
+            this.cameraConstraintKey = key;
+            this.cameraStatus = 'ready';
+            this.cameraError = '';
+            stream.getVideoTracks?.().forEach((track) => {
+                track.addEventListener('ended', () => {
+                    if (this.cameraStream === stream) {
+                        this.cameraStream = null;
+                        this.cameraConstraintKey = null;
+                        this.cameraStatus = 'missing';
+                        this.cameraError = 'Camera disconnected';
+                        this._renderSourceList();
+                    }
+                }, { once: true });
+            });
+            await this._refreshCameraDevices({ render: false });
+            this._renderSourceList();
+            return stream;
+        } catch (error) {
+            const status = cameraErrorStatus(error);
+            this.cameraStatus = status.status;
+            this.cameraError = status.message;
+            this._renderSourceList();
+            throw new Error(status.message);
+        }
+    }
+
+    async loadStaticSource(params, options = {}) {
+        if (isCameraParams(params)) {
+            const stream = await this._ensureCameraStream(params);
+            return loadMediaSource(CAMERA_MEDIA_URL, {
+                type: 'camera',
+                stream,
+                stopTracks: false,
+                readyTimeoutMs: options.readyTimeoutMs
+            });
+        }
+
+        this._stopCameraStream();
+        return loadMediaSource(params.mediaUrl, {
+            type: forcedMediaType(params),
+            loop: params.loop,
+            muted: params.muted
+        });
+    }
+
+    _cameraSourceEntry() {
+        const activeTrack = this.cameraStream?.getVideoTracks?.()[0] || null;
+        const settings = activeTrack?.getSettings?.() || {};
+        const label = this._cameraDeviceLabel(settings.deviceId || this.params.cameraDeviceId);
+        const detailParts = ['Local camera'];
+        if (this.cameraStatus === 'ready' && settings.width && settings.height) {
+            detailParts.push(`${settings.width}x${settings.height}`);
+        } else if (this.cameraDevices.length > 1) {
+            detailParts.push(`${this.cameraDevices.length} devices`);
+        } else if (label && label !== 'Default camera') {
+            detailParts.push(label);
+        }
+
+        const statusMap = {
+            ready: ['Ready', 'ready'],
+            requesting: ['Requesting', 'needs-access'],
+            denied: ['Denied', 'missing'],
+            missing: ['No camera', 'missing'],
+            unsupported: ['Unsupported', 'missing'],
+            error: ['Error', 'missing'],
+            'needs-access': ['Allow', 'needs-access']
+        };
+        const [status, statusType] = statusMap[this.cameraStatus] || statusMap['needs-access'];
+        return {
+            id: CAMERA_SOURCE_ID,
+            name: 'Camera',
+            detail: detailParts.join(' · '),
+            status,
+            statusType
+        };
+    }
+
     _sourceEntries() {
         const builtIns = SOURCE_PRESETS.map((preset) => ({
             id: preset.id,
@@ -2285,8 +2579,9 @@ class RendererLabApp {
             status: 'Ready',
             statusType: 'ready'
         }));
+        const cameraEntry = this._cameraSourceEntry();
 
-        if (!this.customSourceMeta && !this.customFile) return builtIns;
+        if (!this.customSourceMeta && !this.customFile) return [...builtIns, cameraEntry];
 
         const meta = this.customSourceMeta || customSourceMetaFromFile(this.customFile);
         const status = this.customSourceStatus === 'present' ? 'Present' :
@@ -2295,6 +2590,7 @@ class RendererLabApp {
         const detailParts = [meta.mediaType === 'image' ? 'Custom image' : 'Custom video', fileSizeLabel(meta.size)].filter(Boolean);
         return [
             ...builtIns,
+            cameraEntry,
             {
                 id: CUSTOM_SOURCE_ID,
                 name: meta.name || 'Custom file',
@@ -2306,6 +2602,7 @@ class RendererLabApp {
     }
 
     _activeSourceId() {
+        if (isCameraParams(this.params)) return CAMERA_SOURCE_ID;
         const matched = findSourcePreset(this.params.mediaUrl, this.params.mediaType);
         if (matched) return matched.id;
         if (String(this.params.mediaUrl || '').startsWith('blob:') && this.customFile) return CUSTOM_SOURCE_ID;
@@ -2414,7 +2711,7 @@ class RendererLabApp {
         els.localMediaFile.addEventListener('change', () => this._selectLocalMediaFile());
         els.togglePlay.addEventListener('click', () => this.toggle());
         els.overlay.addEventListener('click', () => this.start());
-        els.reloadSource.addEventListener('click', () => this.restart());
+        els.reloadSource.addEventListener('click', () => this._reloadSource());
         els.savePreset.addEventListener('click', () => this._saveCurrentPreset());
         els.duplicatePreset.addEventListener('click', () => this._duplicatePreset());
         els.updatePreset.addEventListener('click', () => this._updatePreset());
@@ -2434,6 +2731,9 @@ class RendererLabApp {
         });
         els.popoutWindow.addEventListener('click', () => this.openPopout());
         els.wtfButton.addEventListener('click', () => this.toggleWtf());
+        navigator.mediaDevices?.addEventListener?.('devicechange', () => {
+            this._refreshCameraDevices().catch((error) => console.warn('[Camera] Device refresh failed:', error));
+        });
         document.addEventListener('click', () => this._closePresetOverflow());
         window.addEventListener('keydown', (event) => {
             if (event.key === 'Escape') this._closePresetOverflow();
@@ -2443,6 +2743,7 @@ class RendererLabApp {
             if (this.meterTimer) window.clearInterval(this.meterTimer);
             this._stopWtf();
             this._clearLocalObjectUrl();
+            this._stopCameraStream();
             this._closePopout();
         });
     }
@@ -2512,6 +2813,7 @@ class RendererLabApp {
     async _selectSource(id) {
         const preset = SOURCE_PRESETS.find((item) => item.id === id);
         if (preset) {
+            const leavingCamera = isCameraParams(this.params);
             this._clearLocalObjectUrl();
             this.params.sourceMode = 'static';
             this.params.mediaUrl = preset.mediaUrl;
@@ -2519,10 +2821,27 @@ class RendererLabApp {
             this.params.sourceName = preset.name;
             this._syncInputs();
             this._paramChanged('mediaUrl', true);
+            if (!this.running && leavingCamera) this._stopCameraStream();
+            return;
+        }
+
+        if (id === CAMERA_SOURCE_ID) {
+            await this._activateCameraSource();
             return;
         }
 
         if (id === CUSTOM_SOURCE_ID) await this._activateCustomSource();
+    }
+
+    async _activateCameraSource() {
+        this._clearLocalObjectUrl();
+        this.params.sourceMode = 'static';
+        this.params.mediaUrl = CAMERA_MEDIA_URL;
+        this.params.mediaType = 'camera';
+        this.params.sourceName = 'Camera';
+        this.params.muted = true;
+        this._syncInputs();
+        this._paramChanged('mediaUrl', true);
     }
 
     async _activateCustomSource() {
@@ -2550,6 +2869,12 @@ class RendererLabApp {
         this.params.sourceName = meta.name;
         this._syncInputs();
         this._paramChanged('mediaUrl', true);
+        if (!this.running) this._stopCameraStream();
+    }
+
+    _reloadSource() {
+        if (isCameraParams(this.params)) this._stopCameraStream();
+        this.restart();
     }
 
     _handleControlInput(key) {
@@ -2632,7 +2957,7 @@ class RendererLabApp {
                 if (token !== this.startToken) return;
                 this.running = true;
                 await this._ensureStaticVideoPlayback();
-                this.setConnection('Static media');
+                this.setConnection(this._staticConnectionLabel());
                 this.setBackend(stats?.backend || 'static');
             } else {
                 this.staticRuntime.destroy();
@@ -2663,6 +2988,7 @@ class RendererLabApp {
         this._stopPopoutOutput();
         this.staticRuntime.destroy();
         this.streamRuntime.stop();
+        if (isCameraParams(this.params)) this._stopCameraStream();
         els.togglePlay.textContent = 'Start';
         els.overlay.classList.remove('hidden');
         this.updateMeters();
@@ -2678,7 +3004,7 @@ class RendererLabApp {
         if (canReuseStaticSource) {
             const stats = await this.staticRuntime.rebuildRenderer(this.params);
             await this._ensureStaticVideoPlayback();
-            this.setConnection('Static media');
+            this.setConnection(this._staticConnectionLabel());
             this.setBackend(stats?.backend || 'static');
             this.updateMeters();
             if (this.popout && !this.popout.closed) {
@@ -2714,6 +3040,10 @@ class RendererLabApp {
         this._syncInputs();
         this._applyVisualState();
         this.start({ autoStart: true });
+    }
+
+    _staticConnectionLabel() {
+        return isCameraParams(this.params) ? 'Camera' : 'Static media';
     }
 
     async openPopout() {
@@ -2828,7 +3158,11 @@ button:hover{background:#202a35}
         try {
             if (this.params.backend === 'canvas2d' || this.params.backend === 'pixel-canvas') {
                 const renderer = new CanvasStaticRenderer(this.popoutStage);
-                await renderer.start(this.params, { mediaState: this._captureStaticMediaState() });
+                await renderer.start(this.params, {
+                    mediaState: this._captureStaticMediaState(),
+                    source,
+                    ownsSource: false
+                });
                 this.popoutRenderer = renderer;
                 return true;
             }
@@ -2858,6 +3192,7 @@ button:hover{background:#202a35}
                 cellHeight: this.params.cellHeight,
                 solidMode: this.params.solidMode,
                 glyphMode: this.params.glyphMode,
+                mirrorX: this.params.mediaType === 'camera' && this.params.cameraMirror,
                 preserveDrawingBuffer: true,
                 preferredBackend
             });
@@ -2895,6 +3230,7 @@ button:hover{background:#202a35}
         this.popoutRenderer.smoothing = this.params.smoothing;
         this.popoutRenderer.cellWidth = this.params.cellWidth;
         this.popoutRenderer.cellHeight = this.params.cellHeight;
+        this.popoutRenderer.mirrorX = this.params.mediaType === 'camera' && this.params.cameraMirror;
         if (this.popoutRenderer._applySourceSmoothing) this.popoutRenderer._applySourceSmoothing();
         if (this.popoutRenderer.canvas) {
             this.popoutRenderer.canvas.style.filter = 'none';
@@ -3000,7 +3336,7 @@ button:hover{background:#202a35}
         els.backend.value = this.params.backend;
         els.backend.disabled = this.params.sourceMode === 'stream';
         const matched = findSourcePreset(this.params.mediaUrl, this.params.mediaType);
-        const sourceName = matched?.name || this.params.sourceName || sourceNameFromUrl(this.params.mediaUrl);
+        const sourceName = isCameraParams(this.params) ? 'Camera' : matched?.name || this.params.sourceName || sourceNameFromUrl(this.params.mediaUrl);
         els.sourceLabel.textContent = this.params.sourceMode === 'static' ? sourceName : 'stream source';
         this._renderSourceList();
     }
@@ -3066,6 +3402,7 @@ button:hover{background:#202a35}
 
     _syncInputs() {
         this._syncSourceControls();
+        this._syncCameraDeviceOptions();
         for (const key of this.controlInputs.keys()) {
             const entry = this.controlInputs.get(key);
             if (!entry) continue;
@@ -3083,6 +3420,8 @@ button:hover{background:#202a35}
         const current = this.params[key];
         if (config.type === 'checkbox') {
             value.textContent = current ? 'on' : 'off';
+        } else if (key === 'cameraDeviceId') {
+            value.textContent = this._cameraDeviceLabel(current);
         } else if (typeof current === 'number') {
             value.textContent = `${Number.isInteger(current) ? current : current.toFixed(2)}${config.unit || ''}`;
         } else {
@@ -3612,7 +3951,7 @@ button:hover{background:#202a35}
                 }
 
                 await this._ensureStaticVideoPlayback();
-                this.setConnection('Static media');
+                this.setConnection(this._staticConnectionLabel());
                 this.setBackend(prepared.stats?.backend || 'static');
                 this.updateMeters();
                 if (this.popout && !this.popout.closed) {

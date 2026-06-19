@@ -29,6 +29,7 @@ uniform float u_jitterSpeed;
 uniform float u_sampleX;
 uniform float u_sampleY;
 uniform float u_time;
+uniform int u_mirrorX;
 in vec2 v_texCoord;
 out vec4 fragColor;
 
@@ -49,6 +50,9 @@ void main() {
     float jx = (hash(seed) - 0.5) * cellSize.x * u_jitterAmount;
     float jy = (hash(seed + vec2(37.0, 91.0)) - 0.5) * cellSize.y * u_jitterAmount;
     vec2 sampleUV = clamp(cellCenter + vec2(jx, jy), vec2(0.0), vec2(1.0));
+    if (u_mirrorX == 1) {
+        sampleUV.x = 1.0 - sampleUV.x;
+    }
 
     vec4 c = texture(u_source, sampleUV);
 
@@ -120,6 +124,7 @@ export class WebGL2Renderer {
         this.smoothing = options.smoothing !== false;
         this.cellWidth = options.cellWidth || 8;
         this.cellHeight = options.cellHeight || 12;
+        this.mirrorX = options.mirrorX === true;
         this.preserveDrawingBuffer = options.preserveDrawingBuffer === true;
 
         this.running = false;
@@ -311,6 +316,7 @@ export class WebGL2Renderer {
         gl.uniform1f(gl.getUniformLocation(this.cellProgram, 'u_sampleX'), this.sampleX);
         gl.uniform1f(gl.getUniformLocation(this.cellProgram, 'u_sampleY'), this.sampleY);
         gl.uniform1f(gl.getUniformLocation(this.cellProgram, 'u_time'), this.frameCount / Math.max(1, this.fps));
+        gl.uniform1i(gl.getUniformLocation(this.cellProgram, 'u_mirrorX'), this.mirrorX ? 1 : 0);
 
         gl.bindVertexArray(this.quadVAO);
         gl.drawArrays(gl.TRIANGLES, 0, 6);

@@ -34,6 +34,18 @@
 2.  **Frontend (Vanilla JS)**: Receives binary frames via WebSockets, manages a jitter buffer, and renders to a Canvas grid.
 3.  **Communication**: Optimized WebSocket protocol with a custom `INIT` handshake for dynamic resolution/FPS adjustment.
 
+### Renderer Lab Fork
+
+This fork also includes a browser-only renderer lab that vendors the `ascii-point-and-click` GPU renderer. It can render built-in demo media, user-selected local files, and a local webcam/camera source through WebGPU first, then WebGL2 or Canvas fallbacks. Local files and camera frames stay in the browser; they are not uploaded to the Python server.
+
+For static browser-only testing, serve the repo over localhost and open the page:
+
+```bash
+python3 -m http.server 8010 --bind 127.0.0.1
+```
+
+Open `http://127.0.0.1:8010/`. The renderer autostarts with Demo Video 1. Select **Camera** in the Source panel to request webcam access; camera support requires `localhost` or another secure browser context and explicit browser permission.
+
 ## 🗜️ Adaptive Frame Codec (opt-in, backward compatible)
 
 The original binary protocol re-sends the full grid every frame. An opt-in
