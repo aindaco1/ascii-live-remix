@@ -19,6 +19,8 @@ struct SmokeReport {
     target: Option<String>,
     download_url: Option<String>,
     downloaded_bytes: Option<usize>,
+    install_started: bool,
+    install_finished: bool,
     forced_update: bool,
     forced_from_version: Option<String>,
     elapsed_ms: u128,
@@ -39,6 +41,8 @@ impl SmokeReport {
             target: None,
             download_url: None,
             downloaded_bytes: None,
+            install_started: false,
+            install_finished: false,
             forced_update: false,
             forced_from_version: None,
             elapsed_ms,
@@ -111,6 +115,8 @@ fn spawn_updater_smoke<R: Runtime>(app: &App<R>) {
                     target: None,
                     download_url: None,
                     downloaded_bytes: None,
+                    install_started: false,
+                    install_finished: false,
                     forced_update,
                     forced_from_version,
                     elapsed_ms: start.elapsed().as_millis(),
@@ -135,6 +141,9 @@ async fn run_updater_smoke<R: Runtime>(
     if forced_update {
         builder = builder.version_comparator(|_current, _remote| true);
     }
+    if env::var_os("ASCILINE_UPDATER_SMOKE_SILENT_INSTALL").is_some() {
+        builder = builder.installer_args(["/qn", "/norestart"]);
+    }
 
     let updater = builder.build().map_err(|error| error.to_string())?;
     let update = updater.check().await.map_err(|error| error.to_string())?;
@@ -154,6 +163,8 @@ async fn run_updater_smoke<R: Runtime>(
             target: None,
             download_url: None,
             downloaded_bytes: None,
+            install_started: false,
+            install_finished: false,
             forced_update,
             forced_from_version,
             elapsed_ms: 0,
@@ -170,8 +181,13 @@ async fn run_updater_smoke<R: Runtime>(
         }
     }
 
+    let install_mode = matches!(mode.as_str(), "install" | "download-and-install" | "hop");
     let mut downloaded_bytes = None;
-    if matches!(mode.as_str(), "download" | "download-only" | "hop") {
+    let mut downloaded_package = None;
+    if matches!(
+        mode.as_str(),
+        "download" | "download-only" | "install" | "download-and-install" | "hop"
+    ) {
         let bytes = update
             .download(|_, _| {}, || {})
             .await
@@ -180,28 +196,41 @@ async fn run_updater_smoke<R: Runtime>(
             return Err("updater downloaded an empty package".to_string());
         }
         downloaded_bytes = Some(bytes.len());
+        downloaded_package = Some(bytes);
     }
 
-    Ok(SmokeReport {
+    let mut report = SmokeReport {
         ok: true,
         kind: "updater".to_string(),
         mode,
         package_version,
         expected_version,
         found_update: true,
-        update_version: Some(update.version),
-        current_version: Some(update.current_version),
-        target: Some(update.target),
+        update_version: Some(update.version.clone()),
+        current_version: Some(update.current_version.clone()),
+        target: Some(update.target.clone()),
         download_url: Some(update.download_url.to_string()),
         downloaded_bytes,
+        install_started: install_mode,
+        install_finished: false,
         forced_update,
         forced_from_version,
         elapsed_ms: 0,
         error: None,
-    })
+    };
+
+    if install_mode {
+        emit_report(&report, 0);
+        let bytes = downloaded_package
+            .ok_or_else(|| "install mode did not download an updater package".to_string())?;
+        update.install(bytes).map_err(|error| error.to_string())?;
+        report.install_finished = true;
+    }
+
+    Ok(report)
 }
 
-fn finish(report: SmokeReport, code: i32) -> ! {
+fn emit_report(report: &SmokeReport, code: i32) {
     let payload = serde_json::to_string_pretty(&report)
         .unwrap_or_else(|error| format!("{{\"ok\":false,\"error\":\"{}\"}}", error));
 
@@ -220,5 +249,9 @@ fn finish(report: SmokeReport, code: i32) -> ! {
     } else {
         eprintln!("ASCILINE_SMOKE_REPORT {payload}");
     }
+}
+
+fn finish(report: SmokeReport, code: i32) -> ! {
+    emit_report(&report, code);
     process::exit(code);
 }

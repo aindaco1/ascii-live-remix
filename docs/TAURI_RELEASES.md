@@ -100,6 +100,7 @@ Release publishing is handled by `.github/workflows/release-desktop.yml`.
 2. Each platform runs the release gates, builds a Tauri bundle, verifies the bundle, collects publishable assets, and writes an updater fragment.
 3. The publish job downloads all platform assets, merges the updater fragments into `latest.json`, creates or updates the GitHub Release, and uploads the installers, updater packages, signatures, and `latest.json`.
 4. Windows and Linux post-publish smoke jobs download the public GitHub Release, install the MSI/deb artifact on fresh hosted runners, verify bundled FFmpeg/ffprobe resources, run a bounded packaged-app launch, and force a Tauri updater check/download against the published signed updater package.
+5. When a previous release with install-capable smoke hooks exists, the same smoke job downloads that older release, installs it, invokes the real Tauri updater install path, waits for the installed app to become the new version, and then repeats the launch/updater checks.
 
 The app is configured to check:
 
@@ -139,6 +140,7 @@ The app has CI-only smoke hooks that are inert unless these environment variable
 
 - `ASCILINE_DESKTOP_SMOKE=launch`: exits after a short bounded launch and writes a report.
 - `ASCILINE_UPDATER_SMOKE=download`: invokes the real Tauri updater plugin, checks `latest.json`, downloads the selected signed updater package, verifies its signature, writes a report, and exits.
-- `ASCILINE_UPDATER_SMOKE_FORCE_FROM_VERSION`: records the forced older-version hop used by CI. The current smoke job uses this to verify the release can hop from an older version to the just-published version without waiting for another real historical release.
+- `ASCILINE_UPDATER_SMOKE=install`: invokes the same updater path, downloads and verifies the package, writes a pre-install report, and calls Tauri's installer path. Windows exits from inside the updater install call after launching the installer, so the smoke script verifies completion by relaunching the installed app and checking its reported package version.
+- `ASCILINE_UPDATER_SMOKE_FORCE_FROM_VERSION`: records the forced older-version hop used by CI. The download smoke uses this to exercise updater selection against the just-published version even when the installed app is already current.
 
-The updater smoke does not perform an in-process self-replacement in CI. Windows and Linux package replacement still runs through the platform installers during the install smoke. Full app-driven self-replacement can be added later once there is a smoke-capable previous release to install and compare against.
+The true app-driven updater hop needs a previous release that already contains `ASCILINE_UPDATER_SMOKE=install`. Releases before v0.1.5 can only participate in direct install and updater download smoke. Starting with the next release after v0.1.5, CI automatically selects the newest eligible previous release, updates it to the just-published release, and verifies the installed version changed.
