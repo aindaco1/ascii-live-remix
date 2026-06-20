@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import {
   collectReleaseAssets,
   createUpdateFragment,
+  githubReleaseAssetName,
   inferInstallerPlatform,
   inferPlatform,
   installerForArtifactName,
@@ -25,6 +26,7 @@ await writeFile(path.join(bundleRoot, 'macos', 'ASCILINE Remix.dmg'), 'dmg');
 
 assert.equal(normalizeSignature(' abc '), 'abc');
 assert.equal(normalizeSignature('{"signature":"xyz"}'), 'xyz');
+assert.equal(githubReleaseAssetName('ASCILINE Remix_0.1.0_amd64.deb'), 'ASCILINE.Remix_0.1.0_amd64.deb');
 assert.equal(inferPlatform({ explicitPlatform: 'darwin-aarch64' }), 'darwin-aarch64');
 assert.equal(inferPlatform({ artifactName: 'ASCILINE Remix.app.tar.gz', env: { RUNNER_OS: 'macOS', RUNNER_ARCH: 'ARM64' } }), 'darwin-aarch64');
 assert.equal(installerForArtifactName('ASCILINE Remix_0.1.0_amd64.deb'), 'deb');
@@ -32,9 +34,9 @@ assert.equal(inferInstallerPlatform({ artifactName: 'ASCILINE Remix_0.1.0_amd64.
 
 const copied = await collectReleaseAssets({ bundleRoot, outDir });
 assert.deepEqual(copied.map((filePath) => path.basename(filePath)).sort(), [
-  'ASCILINE Remix.app.tar.gz',
-  'ASCILINE Remix.app.tar.gz.sig',
-  'ASCILINE Remix.dmg'
+  'ASCILINE.Remix.app.tar.gz',
+  'ASCILINE.Remix.app.tar.gz.sig',
+  'ASCILINE.Remix.dmg'
 ]);
 
 const fragmentPath = path.join(outDir, 'updater-fragment-macos.json');
@@ -49,9 +51,9 @@ const fragment = await createUpdateFragment({
   pubDate: '2026-06-20T00:00:00.000Z'
 });
 assert.equal(fragment.platforms['darwin-aarch64-app'].signature, 'signed-base64');
-assert.equal(fragment.platforms['darwin-aarch64-app'].url, 'https://github.com/aindaco1/ascii-live-remix/releases/download/v0.1.0/ASCILINE%20Remix.app.tar.gz');
+assert.equal(fragment.platforms['darwin-aarch64-app'].url, 'https://github.com/aindaco1/ascii-live-remix/releases/download/v0.1.0/ASCILINE.Remix.app.tar.gz');
 assert.equal(fragment.platforms['darwin-aarch64'].signature, 'signed-base64');
-assert.equal(fragment.platforms['darwin-aarch64'].url, 'https://github.com/aindaco1/ascii-live-remix/releases/download/v0.1.0/ASCILINE%20Remix.app.tar.gz');
+assert.equal(fragment.platforms['darwin-aarch64'].url, 'https://github.com/aindaco1/ascii-live-remix/releases/download/v0.1.0/ASCILINE.Remix.app.tar.gz');
 
 const latestPath = path.join(tempRoot, 'latest.json');
 const { manifest } = await mergeUpdateFragments({

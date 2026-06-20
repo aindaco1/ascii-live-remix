@@ -140,10 +140,11 @@ async function findWindowsExecutable() {
     process.env.LOCALAPPDATA
   ].filter(Boolean);
   for (const root of roots) {
-    const found = await findNestedFile(root, /^ASCILINE Remix\.exe$/i, 5);
+    const found = await findNestedFile(root, /^(ASCILINE Remix|asciline-remix)\.exe$/i, 6)
+      || await findNestedFile(root, /asciline.*remix.*\.exe$/i, 6);
     if (found) return found;
   }
-  fail('could not locate installed ASCILINE Remix.exe');
+  fail('could not locate installed ASCILINE Remix executable');
 }
 
 async function requireNestedFile(root, pattern, label) {

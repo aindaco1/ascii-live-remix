@@ -110,6 +110,14 @@ function artifactScore(filePath) {
   return 100;
 }
 
+function githubReleaseAssetName(name) {
+  return String(name || '').replace(/\s+/g, '.');
+}
+
+function githubReleaseAssetUrl(baseUrl, artifactName) {
+  return `${baseUrl}/${encodeURIComponent(githubReleaseAssetName(artifactName))}`;
+}
+
 function installerForArtifactName(artifactName) {
   const name = String(artifactName || '').toLowerCase();
   if (name.endsWith('.app.tar.gz')) return 'app';
@@ -157,7 +165,7 @@ async function collectReleaseAssets({ bundleRoot, outDir }) {
   const seenNames = new Set();
   for (const filePath of await walkFiles(bundleRoot)) {
     if (!isReleaseAsset(filePath)) continue;
-    const name = path.basename(filePath);
+    const name = githubReleaseAssetName(path.basename(filePath));
     if (seenNames.has(name)) {
       throw new Error(`duplicate release asset basename would overwrite another asset: ${name}`);
     }
@@ -221,7 +229,7 @@ async function createUpdateFragment({
       if (platforms[installerKey]) throw new Error(`duplicate updater platform in artifacts: ${installerKey}`);
       platforms[installerKey] = {
         signature: pair.signature,
-        url: `${baseUrl}/${encodeURIComponent(pair.artifactName)}`
+        url: githubReleaseAssetUrl(baseUrl, pair.artifactName)
       };
       selectedArtifacts.push({
         platform: installerKey,
@@ -241,7 +249,7 @@ async function createUpdateFragment({
     });
     platforms[key] = {
       signature: selected.signature,
-      url: `${baseUrl}/${encodeURIComponent(selected.artifactName)}`
+      url: githubReleaseAssetUrl(baseUrl, selected.artifactName)
     };
   }
 
@@ -304,6 +312,8 @@ async function mergeUpdateFragments({ fragmentsDir, outFile, version, notes, pub
 export {
   collectReleaseAssets,
   createUpdateFragment,
+  githubReleaseAssetName,
+  githubReleaseAssetUrl,
   inferInstallerPlatform,
   inferPlatform,
   installerForArtifactName,
