@@ -1,6 +1,6 @@
 [package]
 name = "asciline-remix"
-version = "0.1.7"
+version = "0.1.8"
 description = "ASCILINE Remix renderer lab desktop shell"
 authors = ["ASCILINE Remix Contributors"]
 edition = "2021"

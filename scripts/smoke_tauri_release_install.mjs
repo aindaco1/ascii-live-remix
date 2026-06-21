@@ -51,7 +51,7 @@ async function smokeWindows(current, previous) {
     await smokeWindowsUpdaterHop(current, previous);
   }
 
-  if (!previous || mode === 'install-and-updater') {
+  if (!previous || mode === 'direct-install-after-hop') {
     await installWindows(current);
     const exe = await findWindowsExecutable();
     await verifyWindowsInstall(exe, current.version);
@@ -87,7 +87,7 @@ async function smokeLinux(current, previous) {
     await smokeLinuxUpdaterHop(current, previous);
   }
 
-  if (!previous || mode === 'install-and-updater') {
+  if (!previous || mode === 'direct-install-after-hop') {
     const packageName = await installLinux(current);
     const exe = await verifyLinuxInstall(packageName, current.version);
 

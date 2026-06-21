@@ -100,7 +100,7 @@ Release publishing is handled by `.github/workflows/release-desktop.yml`.
 2. Each platform runs the release gates, builds a Tauri bundle, verifies the bundle, collects publishable assets, and writes an updater fragment.
 3. The publish job downloads all platform assets, merges the updater fragments into `latest.json`, creates or updates the GitHub Release, and uploads the installers, updater packages, signatures, and `latest.json`.
 4. Windows and Linux post-publish smoke jobs download the public GitHub Release, install the MSI/deb artifact on fresh hosted runners, verify bundled FFmpeg/ffprobe resources, run a bounded packaged-app launch, and force a Tauri updater check/download against the published signed updater package.
-5. When a previous release with install-capable smoke hooks exists, the same smoke job downloads that older release, installs it, invokes the real Tauri updater install path, waits for the installed app to become the new version, and then repeats the launch/updater checks.
+5. When a previous release with install-capable smoke hooks exists, the same smoke job downloads that older release, installs it, invokes the real Tauri updater install path, waits for the installed app to become the new version, and then repeats the launch/updater checks. In that path, CI does not also reinstall the same current MSI/deb afterward; the current package has already been exercised through the updater installer.
 
 The app is configured to check:
 
