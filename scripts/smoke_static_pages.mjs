@@ -111,6 +111,64 @@ async function runSmoke() {
       throw new Error(`Audio input should wait for an explicit Start click: ${JSON.stringify(main.audioReactive)}`);
     }
 
+    await page.waitForFunction(() => window.ascilineRemix?.running && document.querySelector('#toggle-play')?.textContent === 'Stop', null, { timeout: 15000 });
+    const sourceSwitches = [
+      ['demo-image', 'image'],
+      ['demo-video-1', 'video'],
+      ['demo-video-2', 'video']
+    ];
+    for (const [sourceId, mediaType] of sourceSwitches) {
+      await page.click(`#source-list [data-source-id="${sourceId}"]`);
+      await page.waitForFunction(
+        ({ sourceId, mediaType }) => {
+          const app = window.ascilineRemix;
+          const active = document.querySelector(`#source-list [data-source-id="${sourceId}"]`)?.getAttribute('aria-selected') === 'true';
+          return Boolean(app?.running && !app?.starting && app.params?.mediaType === mediaType && active && document.querySelector('#toggle-play')?.textContent === 'Stop');
+        },
+        { sourceId, mediaType },
+        { timeout: 15000 }
+      );
+    }
+
+    await page.evaluate(() => {
+      const original = navigator.mediaDevices || {};
+      window.__smokeAudioCapture = { mic: 0, display: 0 };
+      Object.defineProperty(navigator, 'mediaDevices', {
+        configurable: true,
+        value: {
+          ...original,
+          enumerateDevices: original.enumerateDevices?.bind(original) || (async () => []),
+          getUserMedia: async () => {
+            window.__smokeAudioCapture.mic += 1;
+            return new MediaStream();
+          },
+          getDisplayMedia: async () => {
+            window.__smokeAudioCapture.display += 1;
+            return new MediaStream();
+          }
+        }
+      });
+    });
+    await page.selectOption('#audio-reactive-source', 'display');
+    const afterDisplaySelect = await page.evaluate(() => ({
+      calls: window.__smokeAudioCapture,
+      enabled: Boolean(window.ascilineRemix?.audioReactive?.enabled),
+      active: Boolean(window.ascilineRemix?.audioReactiveRuntime?.active),
+      status: document.querySelector('#audio-reactive-status')?.textContent || ''
+    }));
+    if (afterDisplaySelect.calls.display !== 0 || afterDisplaySelect.enabled || afterDisplaySelect.active) {
+      throw new Error(`Display audio source selection should not start capture: ${JSON.stringify(afterDisplaySelect)}`);
+    }
+    await page.click('#audio-reactive-toggle');
+    await page.waitForFunction(() => window.__smokeAudioCapture?.display === 1, null, { timeout: 5000 });
+    const afterDisplayStart = await page.evaluate(() => ({
+      calls: window.__smokeAudioCapture,
+      status: document.querySelector('#audio-reactive-status')?.textContent || ''
+    }));
+    if (/user gesture/i.test(afterDisplayStart.status)) {
+      throw new Error(`Display audio start still hit user gesture gating: ${JSON.stringify(afterDisplayStart)}`);
+    }
+
     const output = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     output.on('console', (msg) => { if (msg.type() === 'error') errors.push(`output:${msg.text()}`); });
     const outputResponse = await output.goto(`${baseUrl}/output.html`, { waitUntil: 'domcontentloaded' });

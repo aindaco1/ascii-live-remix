@@ -20,6 +20,14 @@ import {
 
 const $ = (id) => document.getElementById(id);
 
+function redirectUnsafeLoopbackAlias() {
+    if (location.protocol === 'http:' && location.hostname === '0.0.0.0') {
+        location.replace(`http://127.0.0.1:${location.port}${location.pathname}${location.search}${location.hash}`);
+    }
+}
+
+redirectUnsafeLoopbackAlias();
+
 const els = {
     sourceMode: $('source-mode'),
     backend: $('backend'),
@@ -1371,7 +1379,10 @@ function cameraConstraintsFromParams(params, deviceId = '') {
 
 function cameraErrorStatus(error) {
     if (!navigator.mediaDevices?.getUserMedia) return { status: 'unsupported', message: 'Camera unsupported' };
-    if (error?.name === 'NotAllowedError' || error?.name === 'SecurityError') return { status: 'denied', message: 'Camera denied' };
+    if (!window.isSecureContext && !isTauriRuntime()) return { status: 'denied', message: 'Use http://127.0.0.1 or localhost' };
+    if (error?.name === 'NotAllowedError' || error?.name === 'SecurityError' || isPermissionBlockedError(error)) {
+        return { status: 'denied', message: 'Camera needs permission' };
+    }
     if (error?.name === 'NotFoundError' || error?.name === 'OverconstrainedError') return { status: 'missing', message: 'No camera found' };
     return { status: 'error', message: error?.message || 'Camera failed' };
 }
@@ -1395,7 +1406,7 @@ function defaultStaticSourceParams() {
 
 function startupSafeParams(params) {
     const normalized = normalizeParams(params);
-    if (isTauriRuntime() && normalized.sourceMode === 'stream') {
+    if (normalized.sourceMode === 'stream' || isCameraParams(normalized) || isCustomRuntimeMediaUrl(normalized.mediaUrl)) {
         return normalizeParams({ ...normalized, ...defaultStaticSourceParams() });
     }
     return normalized;
@@ -1935,12 +1946,23 @@ class AudioReactiveRuntime {
         this.app._syncAudioReactiveUi();
 
         try {
-            await this._ensureContext();
             const source = this.app.audioReactive.source;
+            let pendingStream = null;
+            let pendingLabel = '';
+
+            if (source === 'input') {
+                pendingStream = await this._requestInputStream();
+                pendingLabel = 'Mic / input';
+            } else if (source === 'display') {
+                pendingStream = await this._requestDisplayStream();
+                pendingLabel = 'Display audio';
+            } else if (source !== 'file') {
+                throw new Error(`Unsupported audio source: ${source}`);
+            }
+
+            await this._ensureContext();
             if (source === 'file') await this._startFileSource();
-            else if (source === 'input') await this._startInputSource();
-            else if (source === 'display') await this._startDisplaySource();
-            else throw new Error(`Unsupported audio source: ${source}`);
+            else this._startStreamSource(pendingStream, pendingLabel);
 
             this._configureAnalyser();
             this.status = `Listening: ${this.sourceLabel || source}`;
@@ -2028,9 +2050,9 @@ class AudioReactiveRuntime {
         await this.mediaElement.play();
     }
 
-    async _startInputSource() {
+    async _requestInputStream() {
         if (!navigator.mediaDevices?.getUserMedia) throw new Error('Audio input unavailable');
-        this.stream = await navigator.mediaDevices.getUserMedia({
+        return navigator.mediaDevices.getUserMedia({
             audio: {
                 echoCancellation: false,
                 noiseSuppression: false,
@@ -2039,14 +2061,19 @@ class AudioReactiveRuntime {
             },
             video: false
         });
-        this.sourceNode = this.audioContext.createMediaStreamSource(this.stream);
-        this._connectAnalyserNodes();
-        this.sourceLabel = 'Mic / input';
     }
 
-    async _startDisplaySource() {
+    _startStreamSource(stream, label) {
+        if (!stream) throw new Error('Audio stream unavailable');
+        this.stream = stream;
+        this.sourceNode = this.audioContext.createMediaStreamSource(this.stream);
+        this._connectAnalyserNodes();
+        this.sourceLabel = label;
+    }
+
+    async _requestDisplayStream() {
         if (!navigator.mediaDevices?.getDisplayMedia) throw new Error('Display audio unavailable');
-        this.stream = await navigator.mediaDevices.getDisplayMedia({
+        const stream = await navigator.mediaDevices.getDisplayMedia({
             video: true,
             audio: {
                 suppressLocalAudioPlayback: false,
@@ -2057,14 +2084,11 @@ class AudioReactiveRuntime {
             systemAudio: 'include',
             windowAudio: 'system'
         });
-        if (!this.stream.getAudioTracks?.().length) {
-            this.stream.getTracks?.().forEach((track) => track.stop());
-            this.stream = null;
+        if (!stream.getAudioTracks?.().length) {
+            stream.getTracks?.().forEach((track) => track.stop());
             throw new Error('No display audio track. Try sharing a Chrome tab with audio; app/window capture often omits audio on macOS.');
         }
-        this.sourceNode = this.audioContext.createMediaStreamSource(this.stream);
-        this._connectAnalyserNodes();
-        this.sourceLabel = 'Display audio';
+        return stream;
     }
 
     setFile(file) {
@@ -3979,7 +4003,7 @@ class RendererLabApp {
             const label = this._cameraSelectionLabel(this.params);
             if (label && label !== 'Default') detailParts.push(label);
         }
-        if (this.cameraError && this.cameraStatus === 'ready') detailParts.push(this.cameraError);
+        if (this.cameraError) detailParts.push(this.cameraError);
 
         const statusMap = {
             ready: ['Ready', 'ready'],
@@ -4069,7 +4093,12 @@ class RendererLabApp {
 
             copy.append(name, detail);
             item.append(copy, status);
-            item.addEventListener('click', () => this._selectSource(entry.id));
+            item.addEventListener('click', () => {
+                this._selectSource(entry.id).catch((error) => {
+                    console.warn('[Source] Selection failed:', error);
+                    this.setConnection(error?.message || 'Source failed');
+                });
+            });
             els.sourceList.appendChild(item);
         }
     }
@@ -4220,9 +4249,13 @@ class RendererLabApp {
         els.wtfButton.addEventListener('click', () => this.toggleWtf());
         els.audioReactiveSource?.addEventListener('change', () => {
             this.audioReactive.source = els.audioReactiveSource.value;
-            this.audioReactive.enabled = true;
-            this._restartAudioReactive({ promptForFile: true })
-                .catch((error) => console.warn('[AudioReactive] Source restart failed:', error));
+            this.audioReactive.enabled = false;
+            this.audioReactiveRuntime.stop({ keepStatus: true });
+            this.audioReactiveRuntime.status = this.audioReactive.source === 'file'
+                ? 'Choose audio file'
+                : audioStartPromptStatus(this.audioReactive.source);
+            this.clearAudioReactiveFrame();
+            this._syncAudioReactiveUi(true);
         });
         els.audioReactivePreset?.addEventListener('change', () => {
             this.audioReactive.preset = els.audioReactivePreset.value;
@@ -4522,15 +4555,13 @@ class RendererLabApp {
     async _selectSource(id) {
         const preset = SOURCE_PRESETS.find((item) => item.id === id);
         if (preset) {
-            const leavingCamera = isCameraParams(this.params);
             this._clearLocalObjectUrl();
-            this.params.sourceMode = 'static';
-            this.params.mediaUrl = preset.mediaUrl;
-            this.params.mediaType = preset.mediaType;
-            this.params.sourceName = preset.name;
-            this._syncInputs();
-            this._paramChanged('mediaUrl', true);
-            if (!this.running && leavingCamera) this._stopCameraStream();
+            await this._switchStaticSource({
+                sourceMode: 'static',
+                mediaUrl: preset.mediaUrl,
+                mediaType: preset.mediaType,
+                sourceName: preset.name
+            });
             return;
         }
 
@@ -4544,26 +4575,28 @@ class RendererLabApp {
 
     async _activateCameraSource() {
         this._clearLocalObjectUrl();
-        this.params.sourceMode = 'static';
-        this.params.mediaUrl = CAMERA_MEDIA_URL;
-        this.params.mediaType = 'camera';
-        this.params.sourceName = cameraSourceName(this.params);
-        this.params.muted = true;
-        this._syncInputs();
-        this._paramChanged('mediaUrl', true);
+        const nextParams = normalizeParams({
+            ...this.params,
+            sourceMode: 'static',
+            mediaUrl: CAMERA_MEDIA_URL,
+            mediaType: 'camera',
+            sourceName: cameraSourceName(this.params),
+            muted: true
+        });
+        await this._ensureCameraMixer(nextParams);
+        await this._switchStaticSource(nextParams);
     }
 
     async _activateCustomSource() {
         if (this.customTauriFile) {
             const meta = this.customSourceMeta || customSourceMetaFromTauriFile(this.customTauriFile);
             this.customSourceStatus = 'present';
-            this.params.sourceMode = 'static';
-            this.params.mediaUrl = this.customTauriFile.url;
-            this.params.mediaType = meta.mediaType;
-            this.params.sourceName = meta.name;
-            this._syncInputs();
-            this._paramChanged('mediaUrl', true);
-            if (!this.running) this._stopCameraStream();
+            await this._switchStaticSource({
+                sourceMode: 'static',
+                mediaUrl: this.customTauriFile.url,
+                mediaType: meta.mediaType,
+                sourceName: meta.name
+            }, { preserveBlob: true });
             return;
         }
 
@@ -4585,13 +4618,47 @@ class RendererLabApp {
         if (!objectUrl) return;
         const meta = this.customSourceMeta || customSourceMetaFromFile(this.customFile);
         this.customSourceStatus = 'present';
-        this.params.sourceMode = 'static';
-        this.params.mediaUrl = objectUrl;
-        this.params.mediaType = meta.mediaType;
-        this.params.sourceName = meta.name;
+        await this._switchStaticSource({
+            sourceMode: 'static',
+            mediaUrl: objectUrl,
+            mediaType: meta.mediaType,
+            sourceName: meta.name
+        }, { preserveBlob: true });
+    }
+
+    async _switchStaticSource(sourceParams, options = {}) {
+        clearTimeout(this.rebuildTimer);
+        const previousWasCamera = isCameraParams(this.params);
+        const nextParams = normalizeParams({
+            ...this.params,
+            ...sourceParams,
+            sourceMode: 'static'
+        }, { preserveBlob: options.preserveBlob !== false });
+        const nextIsCamera = isCameraParams(nextParams);
+        const sourceChanged = this.params.sourceMode !== nextParams.sourceMode ||
+            this.params.mediaUrl !== nextParams.mediaUrl ||
+            this.params.mediaType !== nextParams.mediaType;
+
+        this.params = nextParams;
         this._syncInputs();
-        this._paramChanged('mediaUrl', true);
-        if (!this.running) this._stopCameraStream();
+        this._persist();
+        this._applyVisualState();
+        this._syncPresetToolbar();
+        this._renderSourceList();
+
+        if (previousWasCamera && !nextIsCamera) this._stopCameraStream({ render: false });
+        if (!sourceChanged && this.running) return;
+
+        if (this.starting) {
+            this.startToken++;
+            this.starting = false;
+            this.running = false;
+            this.staticRuntime.destroy();
+            this.streamRuntime.stop(false);
+        }
+
+        if (this.running) await this.restart({ mediaState: null });
+        else await this.start({ autoStart: true });
     }
 
     _reloadSource() {
@@ -4652,6 +4719,10 @@ class RendererLabApp {
 
         if (STATIC_REBUILD_KEYS.has(key) || structural) {
             clearTimeout(this.rebuildTimer);
+            if (STATIC_SOURCE_KEYS.has(key)) {
+                this.restart({ mediaState: null }).catch((error) => console.warn('[Renderer] Source restart failed:', error));
+                return;
+            }
             const preserveStaticMedia = !STATIC_SOURCE_KEYS.has(key);
             this.rebuildTimer = setTimeout(() => this.restart({ preserveStaticMedia }), 250);
             return;
