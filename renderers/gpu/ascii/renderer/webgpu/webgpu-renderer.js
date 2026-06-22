@@ -243,11 +243,14 @@ export class WebGPURenderer {
         this.cellWidth = options.cellWidth || 8;
         this.cellHeight = options.cellHeight || 12;
         this.mirrorX = options.mirrorX === true;
+        this.opaqueCanvas = options.opaqueCanvas === true;
 
         this.running = false;
         this.animationId = null;
+        this.frameTimer = null;
         this.window = window;
         this.lastFrameTime = 0;
+        this.lastRafAt = 0;
         this.initialized = false;
         this.fpsFrameCount = 0;
         this.lastFpsUpdate = 0;
@@ -288,11 +291,13 @@ export class WebGPURenderer {
         this.context.configure({
             device: this.device,
             format: format,
-            alphaMode: 'premultiplied'
+            alphaMode: this.opaqueCanvas ? 'opaque' : 'premultiplied'
         });
 
-        // Create compute pipelines (one for video, one for image)
-        if (this.source.isVideo) {
+        this.usesExternalVideoTexture = Boolean(this.source.isVideo && !this.source.canvas);
+
+        // Create compute pipelines (one for browser video textures, one for image/canvas textures)
+        if (this.usesExternalVideoTexture) {
             const videoModule = this.device.createShaderModule({ code: CELL_PASS_VIDEO_WGSL });
             this.videoComputePipeline = this.device.createComputePipeline({
                 layout: 'auto',
@@ -344,16 +349,25 @@ export class WebGPURenderer {
             usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT
         });
 
-        // Use canvas (already has image drawn on it) to create ImageBitmap
         const sourceEl = this.source.canvas || this.source.element;
-        const bitmap = await createImageBitmap(sourceEl);
         this.device.queue.copyExternalImageToTexture(
-            { source: bitmap },
+            { source: sourceEl },
             { texture: this.imageSourceTexture },
             [w, h]
         );
 
         console.log(`[WebGPU] Image texture uploaded: ${w}x${h}`);
+    }
+
+    _copyImageSourceToTexture() {
+        if (!this.imageSourceTexture) return;
+        const sourceEl = this.source.canvas || this.source.element;
+        if (!sourceEl) return;
+        this.device.queue.copyExternalImageToTexture(
+            { source: sourceEl },
+            { texture: this.imageSourceTexture },
+            [this.source.width, this.source.height]
+        );
     }
 
     _updateDimensions() {
@@ -433,7 +447,11 @@ export class WebGPURenderer {
         let computeBG;
         let computePipeline;
 
-        if (this.source.isVideo) {
+        if (this.source.isVideo && this.source.canvas) {
+            this._copyImageSourceToTexture();
+        }
+
+        if (this.usesExternalVideoTexture) {
             let externalTexture;
             try {
                 externalTexture = this.device.importExternalTexture({ source: this.source.element });
@@ -495,8 +513,9 @@ export class WebGPURenderer {
     start() {
         if (this.running) return;
         this.running = true;
+        this.lastRafAt = this.window.performance?.now?.() ?? performance.now();
 
-        const loop = (ts) => {
+        const tick = (ts) => {
             if (!this.running) return;
             if (ts - this.lastFrameTime >= this.frameInterval) {
                 const beforeFrame = this.frameCount;
@@ -504,9 +523,21 @@ export class WebGPURenderer {
                 if (this.frameCount !== beforeFrame) this._recordFrame(ts);
                 this.lastFrameTime = ts;
             }
+        };
+        const loop = (ts) => {
+            this.lastRafAt = this.window.performance?.now?.() ?? performance.now();
+            tick(ts);
+            if (!this.running) return;
             this.animationId = this.window.requestAnimationFrame(loop);
         };
         this.animationId = this.window.requestAnimationFrame(loop);
+        const fallbackInterval = Math.max(8, Math.min(50, this.frameInterval));
+        this.frameTimer = this.window.setInterval(() => {
+            if (!this.running) return;
+            const now = this.window.performance?.now?.() ?? performance.now();
+            const staleMs = Math.max(80, this.frameInterval * 2);
+            if (now - this.lastRafAt >= staleMs) tick(now);
+        }, fallbackInterval);
     }
 
     stop() {
@@ -514,6 +545,10 @@ export class WebGPURenderer {
         if (this.animationId) {
             this.window.cancelAnimationFrame(this.animationId);
             this.animationId = null;
+        }
+        if (this.frameTimer) {
+            this.window.clearInterval(this.frameTimer);
+            this.frameTimer = null;
         }
     }
 

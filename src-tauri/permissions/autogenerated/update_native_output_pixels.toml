@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-update-native-output-pixels"
+description = "Enables the update_native_output_pixels command without any pre-configured scope."
+commands.allow = ["update_native_output_pixels"]
+
+[[permission]]
+identifier = "deny-update-native-output-pixels"
+description = "Denies the update_native_output_pixels command without any pre-configured scope."
+commands.deny = ["update_native_output_pixels"]

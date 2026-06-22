@@ -1,5 +1,5 @@
 import { convertFileSrc, invoke, isTauri as tauriApiIsTauri } from '@tauri-apps/api/core';
-import { emitTo } from '@tauri-apps/api/event';
+import { emitTo, listen } from '@tauri-apps/api/event';
 import { availableMonitors } from '@tauri-apps/api/window';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { relaunch } from '@tauri-apps/plugin-process';
@@ -11,15 +11,26 @@ import {
 } from './output-display.js';
 
 const OUTPUT_WINDOW_LABEL = 'output';
+const NATIVE_OUTPUT_CLOSED_EVENT = 'asciline-native-output-closed';
+let outputDestroyedUnlisten = null;
+let nativeOutputClosedUnlisten = null;
+let outputBackend = null;
 
 const MEDIA_EXTENSIONS = {
-    video: ['mp4', 'webm'],
+    video: ['mp4', 'webm', 'mkv'],
     image: ['jpg', 'jpeg', 'png', 'gif', 'svg']
 };
 
 function isTauriRuntime() {
     try {
-        return Boolean(tauriApiIsTauri?.() || globalThis.__TAURI_INTERNALS__ || globalThis.isTauri);
+        const internals = globalThis.__TAURI_INTERNALS__;
+        return Boolean(
+            tauriApiIsTauri?.() ||
+            internals?.invoke ||
+            internals?.metadata ||
+            globalThis.__TAURI__ ||
+            globalThis.isTauri
+        );
     } catch {
         return false;
     }
@@ -89,6 +100,78 @@ async function stopTauriMediaSession(sessionId) {
     return invoke('stop_media_session', { sessionId });
 }
 
+async function startTauriRawVideoSession(file, request) {
+    if (!isTauriRuntime() || !file?.id) return null;
+    return invoke('start_raw_video_session', { id: file.id, request });
+}
+
+async function readTauriRawVideoFrames(sessionId, maxFrames = 1) {
+    if (!isTauriRuntime() || !sessionId) return null;
+    return invoke('read_raw_video_frames', { sessionId, maxFrames });
+}
+
+async function stopTauriRawVideoSession(sessionId) {
+    if (!isTauriRuntime() || !sessionId) return false;
+    return invoke('stop_raw_video_session', { sessionId });
+}
+
+async function startTauriSystemAudioCapture() {
+    if (!isTauriRuntime()) return { available: false, active: false };
+    return invoke('start_system_audio_capture');
+}
+
+async function readTauriSystemAudioFeatures() {
+    if (!isTauriRuntime()) return { available: false, active: false };
+    return invoke('read_system_audio_features');
+}
+
+async function stopTauriSystemAudioCapture() {
+    if (!isTauriRuntime()) return false;
+    return invoke('stop_system_audio_capture');
+}
+
+async function startTauriInputAudioCapture(deviceLabel = '') {
+    if (!isTauriRuntime()) return { available: false, active: false };
+    const label = String(deviceLabel || '').trim();
+    return invoke('start_input_audio_capture', {
+        request: label ? { deviceLabel: label } : null
+    });
+}
+
+async function readTauriInputAudioFeatures() {
+    if (!isTauriRuntime()) return { available: false, active: false };
+    return invoke('read_input_audio_features');
+}
+
+async function stopTauriInputAudioCapture() {
+    if (!isTauriRuntime()) return false;
+    return invoke('stop_input_audio_capture');
+}
+
+async function requestTauriMediaPermission(kind) {
+    if (!isTauriRuntime()) return { available: false, kind, status: 'unsupported' };
+    return invoke('request_media_permission', { kind });
+}
+
+async function recordTauriMediaDiagnostic(message) {
+    if (!isTauriRuntime()) return false;
+    await invoke('record_media_diagnostic', { message: String(message || '') });
+    return true;
+}
+
+async function clearTauriBrowsingData() {
+    if (!isTauriRuntime()) return false;
+    const current = WebviewWindow.getCurrent();
+    if (typeof current?.clearAllBrowsingData !== 'function') return false;
+    await current.clearAllBrowsingData();
+    return true;
+}
+
+async function listenTauriEvent(eventName, handler) {
+    if (!isTauriRuntime()) return () => {};
+    return listen(eventName, handler);
+}
+
 async function listTauriOutputDisplays() {
     if (!isTauriRuntime()) return [];
     const monitors = await availableMonitors();
@@ -125,6 +208,18 @@ async function placeOutputWindow(windowRef, displayPreference = 'auto') {
 
 async function sendTauriOutputState(payload) {
     if (!isTauriRuntime()) return false;
+    if (outputBackend === 'native') {
+        try {
+            const result = await invoke('update_native_output_window', { payload });
+            if (result?.opened) return true;
+            outputBackend = null;
+            return false;
+        } catch (error) {
+            console.info('[TauriOutput] Native output state sync failed:', error);
+            outputBackend = null;
+            return false;
+        }
+    }
     try {
         await emitTo(OUTPUT_WINDOW_LABEL, 'asciline-output-state', payload);
         return true;
@@ -134,28 +229,137 @@ async function sendTauriOutputState(payload) {
     }
 }
 
+async function sendTauriOutputFrame(frame) {
+    if (!isTauriRuntime()) return false;
+    if (outputBackend === 'native') {
+        try {
+            const result = await invoke('update_native_output_frame', { frame });
+            if (result?.accepted) return true;
+            outputBackend = null;
+            return false;
+        } catch (error) {
+            console.info('[TauriOutput] Native frame sync failed:', error);
+            outputBackend = null;
+            return false;
+        }
+    }
+    try {
+        await emitTo(OUTPUT_WINDOW_LABEL, 'asciline-output-frame', frame);
+        return true;
+    } catch (error) {
+        console.info('[TauriOutput] Frame sync failed:', error);
+        return false;
+    }
+}
+
+async function sendTauriOutputPixels(frame) {
+    if (!isTauriRuntime() || outputBackend !== 'native') return false;
+    try {
+        const result = await invoke('update_native_output_pixels', { frame });
+        if (result?.accepted) return true;
+        outputBackend = null;
+        return false;
+    } catch (error) {
+        console.info('[TauriOutput] Native pixel sync unavailable, falling back to encoded frames:', error);
+        return null;
+    }
+}
+
+function scheduleOutputStateResend(payload) {
+    if (!isTauriRuntime()) return;
+    const resend = () => sendTauriOutputState(payload).catch(() => false);
+    for (const delay of [80, 180, 360, 720, 1400, 2500, 4000]) {
+        window.setTimeout(resend, delay);
+    }
+}
+
+async function watchOutputWindowDestroyed(windowRef, onClosed) {
+    if (!isTauriRuntime() || !windowRef || !onClosed || outputDestroyedUnlisten) return;
+    try {
+        outputDestroyedUnlisten = await windowRef.once('tauri://destroyed', () => {
+            outputDestroyedUnlisten = null;
+            if (outputBackend === 'webview') outputBackend = null;
+            onClosed?.();
+        });
+    } catch (error) {
+        console.info('[TauriOutput] Close watcher unavailable:', error);
+    }
+}
+
+async function watchNativeOutputClosed(onClosed) {
+    if (!isTauriRuntime() || nativeOutputClosedUnlisten) return;
+    try {
+        nativeOutputClosedUnlisten = await listen(NATIVE_OUTPUT_CLOSED_EVENT, () => {
+            nativeOutputClosedUnlisten?.();
+            nativeOutputClosedUnlisten = null;
+            outputBackend = null;
+            onClosed?.();
+        });
+    } catch (error) {
+        console.info('[TauriOutput] Native close watcher unavailable:', error);
+    }
+}
+
+async function openNativeSurfaceOutput(payload, options = {}) {
+    if (!isTauriRuntime() || options.show === false) return false;
+    try {
+        await recordTauriMediaDiagnostic(
+            `[TauriOutput] native-open start mode=${payload?.outputMode || 'unknown'} media=${payload?.params?.mediaUrl || ''}`
+        ).catch(() => {});
+        const result = await invoke('open_native_output_window', {
+            request: {
+                payload,
+                displayPreference: options.outputDisplay || 'auto',
+                visible: options.show !== false
+            }
+        });
+        await recordTauriMediaDiagnostic(
+            `[TauriOutput] native-open result opened=${Boolean(result?.opened)} backend=${result?.backend || 'unknown'} reason=${result?.reason || ''}`
+        ).catch(() => {});
+        if (!result?.opened) return false;
+        outputBackend = 'native';
+        await watchNativeOutputClosed(options.onClosed);
+        const existing = await WebviewWindow.getByLabel(OUTPUT_WINDOW_LABEL).catch(() => null);
+        await existing?.close?.().catch(() => {});
+        return true;
+    } catch (error) {
+        await recordTauriMediaDiagnostic(`[TauriOutput] native-open error ${error?.message || error}`).catch(() => {});
+        console.info('[TauriOutput] Native surface unavailable:', error);
+        outputBackend = null;
+        return false;
+    }
+}
+
 async function openTauriOutputWindow(payload, options = {}) {
     if (!isTauriRuntime()) return false;
+    const shouldShow = options.show !== false;
+
+    if (await openNativeSurfaceOutput(payload, options)) return true;
 
     const existing = await WebviewWindow.getByLabel(OUTPUT_WINDOW_LABEL).catch(() => null);
     if (existing) {
-        await existing.show().catch(() => {});
-        await placeOutputWindow(existing, options.outputDisplay).catch(() => {});
-        await existing.setFocus().catch(() => {});
+        outputBackend = 'webview';
+        await watchOutputWindowDestroyed(existing, options.onClosed);
+        if (shouldShow) {
+            await existing.show().catch(() => {});
+            await placeOutputWindow(existing, options.outputDisplay).catch(() => {});
+            await existing.setFocus().catch(() => {});
+        }
         await sendTauriOutputState(payload);
+        scheduleOutputStateResend(payload);
         return true;
     }
 
     const outputWindow = new WebviewWindow(OUTPUT_WINDOW_LABEL, {
         url: 'output.html',
-        title: 'ASCILINE Remix Output',
+        title: 'ASCII VJ Remix Output',
         width: 1280,
         height: 720,
         minWidth: 320,
         minHeight: 240,
         resizable: true,
-        decorations: false,
-        visible: true,
+        decorations: true,
+        visible: shouldShow,
         backgroundColor: '#030405'
     });
 
@@ -171,22 +375,44 @@ async function openTauriOutputWindow(payload, options = {}) {
         });
     });
 
-    await placeOutputWindow(outputWindow, options.outputDisplay);
+    await watchOutputWindowDestroyed(outputWindow, options.onClosed);
+    outputBackend = 'webview';
+    if (shouldShow) {
+        await placeOutputWindow(outputWindow, options.outputDisplay);
+        await outputWindow.show().catch(() => {});
+        await outputWindow.setFocus().catch(() => {});
+    }
     await sendTauriOutputState(payload);
+    scheduleOutputStateResend(payload);
     return true;
 }
 
 export {
+    clearTauriBrowsingData,
     checkTauriUpdate,
     installTauriUpdate,
     isTauriRuntime,
+    listenTauriEvent,
     listTauriOutputDisplays,
     openTauriMediaFile,
     openTauriOutputWindow,
     probeTauriMediaFile,
+    readTauriInputAudioFeatures,
     readTauriMediaSessionFrame,
     readTauriMediaSessionFrames,
+    readTauriRawVideoFrames,
+    readTauriSystemAudioFeatures,
+    recordTauriMediaDiagnostic,
+    requestTauriMediaPermission,
+    sendTauriOutputFrame,
+    sendTauriOutputPixels,
     sendTauriOutputState,
     startTauriMediaSession,
-    stopTauriMediaSession
+    startTauriRawVideoSession,
+    startTauriInputAudioCapture,
+    startTauriSystemAudioCapture,
+    stopTauriInputAudioCapture,
+    stopTauriSystemAudioCapture,
+    stopTauriMediaSession,
+    stopTauriRawVideoSession
 };

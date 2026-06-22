@@ -126,11 +126,15 @@ export class WebGL2Renderer {
         this.cellHeight = options.cellHeight || 12;
         this.mirrorX = options.mirrorX === true;
         this.preserveDrawingBuffer = options.preserveDrawingBuffer === true;
+        this.opaqueCanvas = options.opaqueCanvas === true;
+        this.desynchronized = options.desynchronized === true;
 
         this.running = false;
         this.animationId = null;
+        this.frameTimer = null;
         this.window = window;
         this.lastFrameTime = 0;
+        this.lastRafAt = 0;
         this.initialized = false;
         this.frameCount = 0;
         this.fpsFrameCount = 0;
@@ -161,8 +165,9 @@ export class WebGL2Renderer {
 
         this.gl = this.canvas.getContext('webgl2', {
             antialias: false,
-            alpha: true,
-            preserveDrawingBuffer: this.preserveDrawingBuffer
+            alpha: !this.opaqueCanvas,
+            preserveDrawingBuffer: this.preserveDrawingBuffer,
+            desynchronized: this.desynchronized
         });
         if (!this.gl) throw new Error('WebGL2 not available');
 
@@ -290,9 +295,10 @@ export class WebGL2Renderer {
 
         // For video, update texture every frame
         if (this.source.isVideo) {
+            const sourceEl = this.source.canvas || this.source.element;
             gl.bindTexture(gl.TEXTURE_2D, this.sourceTexture);
             try {
-                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.source.element);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sourceEl);
             } catch (e) { return; }
         }
 
@@ -363,8 +369,9 @@ export class WebGL2Renderer {
     start() {
         if (this.running) return;
         this.running = true;
+        this.lastRafAt = this.window.performance?.now?.() ?? performance.now();
 
-        const loop = (ts) => {
+        const tick = (ts) => {
             if (!this.running) return;
             if (ts - this.lastFrameTime >= this.frameInterval) {
                 const beforeFrame = this.frameCount;
@@ -372,9 +379,21 @@ export class WebGL2Renderer {
                 if (this.frameCount !== beforeFrame) this._recordFrame(ts);
                 this.lastFrameTime = ts;
             }
+        };
+        const loop = (ts) => {
+            this.lastRafAt = this.window.performance?.now?.() ?? performance.now();
+            tick(ts);
+            if (!this.running) return;
             this.animationId = this.window.requestAnimationFrame(loop);
         };
         this.animationId = this.window.requestAnimationFrame(loop);
+        const fallbackInterval = Math.max(8, Math.min(50, this.frameInterval));
+        this.frameTimer = this.window.setInterval(() => {
+            if (!this.running) return;
+            const now = this.window.performance?.now?.() ?? performance.now();
+            const staleMs = Math.max(80, this.frameInterval * 2);
+            if (now - this.lastRafAt >= staleMs) tick(now);
+        }, fallbackInterval);
     }
 
     stop() {
@@ -382,6 +401,10 @@ export class WebGL2Renderer {
         if (this.animationId) {
             this.window.cancelAnimationFrame(this.animationId);
             this.animationId = null;
+        }
+        if (this.frameTimer) {
+            this.window.clearInterval(this.frameTimer);
+            this.frameTimer = null;
         }
     }
 

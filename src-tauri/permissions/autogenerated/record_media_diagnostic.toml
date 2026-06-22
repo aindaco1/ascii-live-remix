@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-record-media-diagnostic"
+description = "Enables the record_media_diagnostic command without any pre-configured scope."
+commands.allow = ["record_media_diagnostic"]
+
+[[permission]]
+identifier = "deny-record-media-diagnostic"
+description = "Denies the record_media_diagnostic command without any pre-configured scope."
+commands.deny = ["record_media_diagnostic"]

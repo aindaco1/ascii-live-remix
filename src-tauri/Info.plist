@@ -3,10 +3,12 @@
 <plist version="1.0">
 <dict>
   <key>NSCameraUsageDescription</key>
-  <string>ASCILINE Remix uses cameras you select to render local live video in the renderer lab.</string>
+  <string>ASCII VJ Remix uses cameras you select to render local live video in the renderer lab.</string>
   <key>NSMicrophoneUsageDescription</key>
-  <string>ASCILINE Remix uses microphones or audio inputs you select to drive local audio-reactive visuals.</string>
+  <string>ASCII VJ Remix uses microphones or audio inputs you select to drive local audio-reactive visuals.</string>
   <key>NSScreenCaptureUsageDescription</key>
-  <string>ASCILINE Remix can capture display or window audio/video when you explicitly select display capture for local audio-reactive testing.</string>
+  <string>ASCII VJ Remix can capture display or window audio/video when you explicitly select display capture for local audio-reactive testing.</string>
+  <key>NSAudioCaptureUsageDescription</key>
+  <string>ASCII VJ Remix uses system audio you select to drive local audio-reactive visuals.</string>
 </dict>
 </plist>

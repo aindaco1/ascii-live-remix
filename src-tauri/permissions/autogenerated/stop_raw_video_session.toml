@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-stop-raw-video-session"
+description = "Enables the stop_raw_video_session command without any pre-configured scope."
+commands.allow = ["stop_raw_video_session"]
+
+[[permission]]
+identifier = "deny-stop-raw-video-session"
+description = "Denies the stop_raw_video_session command without any pre-configured scope."
+commands.deny = ["stop_raw_video_session"]

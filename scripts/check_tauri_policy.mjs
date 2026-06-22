@@ -7,6 +7,7 @@ const configPath = path.join(root, 'src-tauri', 'tauri.conf.json');
 const notarizedConfigPath = path.join(root, 'src-tauri', 'tauri.notarized.conf.json');
 const capabilitiesDir = path.join(root, 'src-tauri', 'capabilities');
 const infoPlistPath = path.join(root, 'src-tauri', 'Info.plist');
+const entitlementsPath = path.join(root, 'src-tauri', 'Entitlements.plist');
 const releaseWorkflowPath = path.join(root, '.github', 'workflows', 'release-desktop.yml');
 const tauriRoot = path.join(root, 'src-tauri');
 const issues = [];
@@ -60,6 +61,37 @@ if (security.freezePrototype !== true) {
   issues.push('app.security.freezePrototype must be true');
 }
 
+if (config?.app?.macOSPrivateApi !== true) {
+  issues.push('app.macOSPrivateApi must be true so the macOS webview uses the required private API preferences');
+}
+
+if (config?.bundle?.macOS?.entitlements !== 'Entitlements.plist') {
+  issues.push('bundle.macOS.entitlements must point to Entitlements.plist for camera and microphone capture');
+}
+
+let entitlements = '';
+try {
+  entitlements = await readFile(entitlementsPath, 'utf8');
+} catch {
+  issues.push('src-tauri/Entitlements.plist is required for macOS camera and microphone capture');
+}
+for (const key of [
+  'com.apple.security.device.audio-input',
+  'com.apple.security.device.camera',
+  'com.apple.security.device.microphone'
+]) {
+  if (!entitlements.includes(`<key>${key}</key>`)) {
+    issues.push(`Entitlements.plist must include ${key}`);
+  }
+}
+
+const mainWindow = Array.isArray(config?.app?.windows)
+  ? config.app.windows.find((windowConfig) => windowConfig?.label === 'main') || config.app.windows[0]
+  : null;
+if (mainWindow?.useHttpsScheme !== true) {
+  issues.push('app.windows[main].useHttpsScheme must be true so browser media capture runs on a secure local origin');
+}
+
 if (security.assetProtocol?.enable !== true) {
   issues.push('app.security.assetProtocol.enable must be true');
 }
@@ -71,6 +103,9 @@ if (!Array.isArray(security.assetProtocol?.scope) || security.assetProtocol.scop
 const resources = config?.bundle?.resources || [];
 if (!Array.isArray(resources) || !resources.includes('resources/ffmpeg/**/*')) {
   issues.push('bundle.resources must include resources/ffmpeg/**/* for packaged FFmpeg sidecars');
+}
+if (!Array.isArray(resources) || !resources.includes('../media/**/*')) {
+  issues.push('bundle.resources must include ../media/**/* for packaged native output demo media');
 }
 
 const requiredIcons = [
@@ -155,7 +190,32 @@ if (!mainCapability) {
     issues.push('default.json capability must apply only to the main window');
   }
   const permissions = new Set(mainCapability.permissions || []);
-  for (const permission of ['dialog:allow-open', 'core:webview:allow-create-webview-window', 'process:allow-restart']) {
+  const requiredMainPermissions = [
+    'dialog:allow-open',
+    'core:webview:allow-clear-all-browsing-data',
+    'core:webview:allow-create-webview-window',
+    'process:allow-restart',
+    'allow-select-media-file',
+    'allow-list-media-files',
+    'allow-forget-media-file',
+    'allow-probe-registered-media',
+    'allow-preview-registered-media',
+    'allow-start-registered-media-session',
+    'allow-read-media-session-frame',
+    'allow-read-media-session-frames',
+    'allow-stop-media-session',
+    'allow-list-media-sessions',
+    'allow-request-media-permission',
+    'allow-record-media-diagnostic',
+    'allow-open-native-output-window',
+    'allow-update-native-output-window',
+    'allow-update-native-output-frame',
+    'allow-update-native-output-pixels',
+    'allow-start-system-audio-capture',
+    'allow-read-system-audio-features',
+    'allow-stop-system-audio-capture'
+  ];
+  for (const permission of requiredMainPermissions) {
     if (!permissions.has(permission)) {
       issues.push(`main capability must include ${permission}`);
     }
@@ -206,7 +266,8 @@ const infoPlist = await readFile(infoPlistPath, 'utf8');
 for (const key of [
   'NSCameraUsageDescription',
   'NSMicrophoneUsageDescription',
-  'NSScreenCaptureUsageDescription'
+  'NSScreenCaptureUsageDescription',
+  'NSAudioCaptureUsageDescription'
 ]) {
   if (!infoPlist.includes(`<key>${key}</key>`)) {
     issues.push(`Info.plist must include ${key}`);

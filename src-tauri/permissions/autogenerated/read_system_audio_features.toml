@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-read-system-audio-features"
+description = "Enables the read_system_audio_features command without any pre-configured scope."
+commands.allow = ["read_system_audio_features"]
+
+[[permission]]
+identifier = "deny-read-system-audio-features"
+description = "Denies the read_system_audio_features command without any pre-configured scope."
+commands.deny = ["read_system_audio_features"]

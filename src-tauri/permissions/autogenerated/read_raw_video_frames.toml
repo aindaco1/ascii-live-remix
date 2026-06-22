@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-read-raw-video-frames"
+description = "Enables the read_raw_video_frames command without any pre-configured scope."
+commands.allow = ["read_raw_video_frames"]
+
+[[permission]]
+identifier = "deny-read-raw-video-frames"
+description = "Denies the read_raw_video_frames command without any pre-configured scope."
+commands.deny = ["read_raw_video_frames"]

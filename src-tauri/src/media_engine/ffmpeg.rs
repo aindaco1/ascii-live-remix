@@ -143,6 +143,42 @@ impl DecodeConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct RgbReaderOptions {
+    pub start_seconds: Option<f64>,
+    pub output_fps: Option<f64>,
+}
+
+impl Default for RgbReaderOptions {
+    fn default() -> Self {
+        Self {
+            start_seconds: None,
+            output_fps: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CameraReaderOptions {
+    pub device_label: Option<String>,
+    pub capture_width: Option<u32>,
+    pub capture_height: Option<u32>,
+    pub capture_fps: Option<f64>,
+    pub output_fps: Option<f64>,
+}
+
+impl Default for CameraReaderOptions {
+    fn default() -> Self {
+        Self {
+            device_label: None,
+            capture_width: None,
+            capture_height: None,
+            capture_fps: None,
+            output_fps: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodedRgbFrame {
     pub index: usize,
@@ -289,8 +325,17 @@ pub fn spawn_rgb_reader(
     source: &Path,
     config: &DecodeConfig,
 ) -> Result<FfmpegRgbFrameReader, FfmpegError> {
+    spawn_rgb_reader_with_options(binaries, source, config, &RgbReaderOptions::default())
+}
+
+pub fn spawn_rgb_reader_with_options(
+    binaries: &FfmpegBinaries,
+    source: &Path,
+    config: &DecodeConfig,
+    options: &RgbReaderOptions,
+) -> Result<FfmpegRgbFrameReader, FfmpegError> {
     let mut child = Command::new(&binaries.ffmpeg)
-        .args(ffmpeg_decode_args(source, config))
+        .args(ffmpeg_decode_args(source, config, options))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -314,6 +359,47 @@ pub fn spawn_rgb_reader(
     })
 }
 
+pub fn spawn_macos_camera_rgb_reader(
+    binaries: &FfmpegBinaries,
+    config: &DecodeConfig,
+    options: &CameraReaderOptions,
+) -> Result<FfmpegRgbFrameReader, FfmpegError> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut child = Command::new(&binaries.ffmpeg)
+            .args(ffmpeg_macos_camera_decode_args(config, options))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|source| FfmpegError::Io {
+                program: binaries.ffmpeg.clone(),
+                source,
+            })?;
+        let stdout = child.stdout.take().ok_or_else(|| {
+            FfmpegError::InvalidDecodeConfig("ffmpeg stdout pipe was not available".to_string())
+        })?;
+
+        Ok(FfmpegRgbFrameReader {
+            child,
+            stdout,
+            program: binaries.ffmpeg.clone(),
+            width: config.width,
+            height: config.height,
+            frame_bytes: checked_rgb_frame_bytes(config.width, config.height)?,
+            index: 0,
+            finished: false,
+        })
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (binaries, config, options);
+        Err(FfmpegError::InvalidDecodeConfig(
+            "native camera output is currently implemented for macOS only".to_string(),
+        ))
+    }
+}
+
 fn ffprobe_args(source: &Path) -> Vec<String> {
     vec![
         "-v".to_string(),
@@ -328,11 +414,25 @@ fn ffprobe_args(source: &Path) -> Vec<String> {
     ]
 }
 
-fn ffmpeg_decode_args(source: &Path, config: &DecodeConfig) -> Vec<String> {
-    vec![
+fn ffmpeg_decode_args(
+    source: &Path,
+    config: &DecodeConfig,
+    options: &RgbReaderOptions,
+) -> Vec<String> {
+    let mut args = vec![
         "-nostdin".to_string(),
         "-v".to_string(),
         "error".to_string(),
+    ];
+
+    if let Some(start_seconds) = options.start_seconds {
+        if start_seconds.is_finite() && start_seconds > 0.0 {
+            args.push("-ss".to_string());
+            args.push(format!("{start_seconds:.3}"));
+        }
+    }
+
+    args.extend([
         "-i".to_string(),
         source.to_string_lossy().into_owned(),
         "-an".to_string(),
@@ -341,15 +441,91 @@ fn ffmpeg_decode_args(source: &Path, config: &DecodeConfig) -> Vec<String> {
         "-frames:v".to_string(),
         config.max_frames.to_string(),
         "-vf".to_string(),
-        // Match Python VideoDecoder's OpenCV INTER_LINEAR resize semantics as
-        // closely as FFmpeg's scaler allows for stream-path parity.
-        format!("scale={}:{}:flags=bilinear", config.width, config.height),
+        ffmpeg_video_filter(config, options),
         "-pix_fmt".to_string(),
         "rgb24".to_string(),
         "-f".to_string(),
         "rawvideo".to_string(),
         "pipe:1".to_string(),
-    ]
+    ]);
+
+    args
+}
+
+fn ffmpeg_macos_camera_decode_args(
+    config: &DecodeConfig,
+    options: &CameraReaderOptions,
+) -> Vec<String> {
+    let mut args = vec![
+        "-nostdin".to_string(),
+        "-v".to_string(),
+        "error".to_string(),
+        "-f".to_string(),
+        "avfoundation".to_string(),
+    ];
+
+    if let Some(fps) = options
+        .capture_fps
+        .filter(|fps| fps.is_finite() && *fps > 0.0)
+    {
+        args.push("-framerate".to_string());
+        args.push(format!("{fps:.3}"));
+    }
+
+    if let (Some(width), Some(height)) = (options.capture_width, options.capture_height) {
+        if width > 0 && height > 0 {
+            args.push("-video_size".to_string());
+            args.push(format!("{width}x{height}"));
+        }
+    }
+
+    args.extend([
+        "-i".to_string(),
+        macos_camera_input_name(options.device_label.as_deref()),
+        "-an".to_string(),
+        "-sn".to_string(),
+        "-dn".to_string(),
+        "-vf".to_string(),
+        ffmpeg_video_filter(
+            config,
+            &RgbReaderOptions {
+                start_seconds: None,
+                output_fps: None,
+            },
+        ),
+        "-pix_fmt".to_string(),
+        "rgb24".to_string(),
+        "-f".to_string(),
+        "rawvideo".to_string(),
+        "pipe:1".to_string(),
+    ]);
+
+    args
+}
+
+fn macos_camera_input_name(device_label: Option<&str>) -> String {
+    let label = device_label
+        .map(|label| {
+            label
+                .trim()
+                .chars()
+                .filter(|ch| !ch.is_control() && *ch != ':')
+                .collect::<String>()
+        })
+        .filter(|label| !label.is_empty() && label != "Selected camera" && label != "Camera 1");
+
+    match label {
+        Some(label) => format!("{label}:none"),
+        None => "0:none".to_string(),
+    }
+}
+
+fn ffmpeg_video_filter(config: &DecodeConfig, options: &RgbReaderOptions) -> String {
+    let scale = format!("scale={}:{}:flags=bilinear", config.width, config.height);
+    match options.output_fps {
+        Some(fps) if fps.is_finite() && fps > 0.0 => format!("fps=fps={fps:.3},{scale}"),
+        _ => scale,
+    }
 }
 
 fn parse_probe_output(source: &Path, bytes: &[u8]) -> Result<VideoProbe, FfmpegError> {
@@ -477,12 +653,49 @@ mod tests {
     #[test]
     fn builds_ffmpeg_rawvideo_args_without_shell() {
         let config = DecodeConfig::new(160, 90, 3).unwrap();
-        let args = ffmpeg_decode_args(Path::new("a b/demo.mp4"), &config);
+        let args = ffmpeg_decode_args(
+            Path::new("a b/demo.mp4"),
+            &config,
+            &RgbReaderOptions::default(),
+        );
 
         assert_eq!(args[0], "-nostdin");
         assert!(args.contains(&"a b/demo.mp4".to_string()));
         assert!(args.contains(&"scale=160:90:flags=bilinear".to_string()));
         assert_eq!(args.last().map(String::as_str), Some("pipe:1"));
+    }
+
+    #[test]
+    fn builds_macos_camera_rawvideo_args_without_shell() {
+        let config = DecodeConfig::new(640, 360, 3).unwrap();
+        let args = ffmpeg_macos_camera_decode_args(
+            &config,
+            &CameraReaderOptions {
+                device_label: Some("FaceTime HD Camera".to_string()),
+                capture_width: Some(1280),
+                capture_height: Some(720),
+                capture_fps: Some(30.0),
+                output_fps: Some(24.0),
+            },
+        );
+
+        assert_eq!(args[0], "-nostdin");
+        assert!(args.contains(&"avfoundation".to_string()));
+        assert!(args.contains(&"FaceTime HD Camera:none".to_string()));
+        assert!(args.contains(&"1280x720".to_string()));
+        assert!(args.contains(&"scale=640:360:flags=bilinear".to_string()));
+        assert!(!args.contains(&"fps=fps=24.000,scale=640:360:flags=bilinear".to_string()));
+        assert_eq!(args.last().map(String::as_str), Some("pipe:1"));
+    }
+
+    #[test]
+    fn macos_camera_input_defaults_to_first_video_device() {
+        assert_eq!(macos_camera_input_name(None), "0:none");
+        assert_eq!(macos_camera_input_name(Some("Camera 1")), "0:none");
+        assert_eq!(
+            macos_camera_input_name(Some("USB: Camera")),
+            "USB Camera:none"
+        );
     }
 
     #[test]

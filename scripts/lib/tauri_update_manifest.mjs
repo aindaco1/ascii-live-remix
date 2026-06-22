@@ -255,7 +255,7 @@ async function createUpdateFragment({
 
   const fragment = {
     version: finalVersion,
-    notes: notes || `ASCILINE Remix ${finalVersion}`,
+    notes: notes || `ASCII VJ Remix ${finalVersion}`,
     pub_date: pubDate || new Date().toISOString(),
     platforms,
     _source: {
@@ -279,7 +279,7 @@ async function mergeUpdateFragments({ fragmentsDir, outFile, version, notes, pub
   }
 
   const finalVersion = version || fragments[0].value.version;
-  const finalNotes = notes || fragments[0].value.notes || `ASCILINE Remix ${finalVersion}`;
+  const finalNotes = notes || fragments[0].value.notes || `ASCII VJ Remix ${finalVersion}`;
   const finalPubDate = pubDate || fragments[0].value.pub_date || new Date().toISOString();
   const platforms = {};
 

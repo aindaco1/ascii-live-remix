@@ -1,6 +1,6 @@
 # Tauri Release and Update Runbook
 
-ASCILINE Remix desktop builds must remain standalone at runtime. The only intentional online path is the Tauri updater, which checks GitHub release metadata when the app chooses to invoke the updater plugin.
+ASCII VJ Remix desktop builds must remain standalone at runtime. The only intentional online path is the Tauri updater, which checks GitHub release metadata when the app chooses to invoke the updater plugin.
 
 ## Signing Model
 
@@ -32,6 +32,22 @@ The script passes the key to `gh secret set` over stdin, not as a command-line a
 `src-tauri/tauri.conf.json` sets `bundle.macOS.signingIdentity` to `"-"`, which asks Tauri/codesign for ad-hoc signing. This makes local bundles code-sign-valid and avoids shipping a completely unsigned `.app`.
 
 Ad-hoc signing is not Apple notarization. A GitHub-downloaded app can still show Gatekeeper warnings because Apple requires a Developer ID certificate and notarization for the cleanest first-open experience. The current setup is the best self-signed/default path; broad public distribution should later add Developer ID signing and notarization.
+
+Local macOS media privacy grants can be sensitive to the final app signature. `scripts/run_local_desktop_app.sh` accepts `ASCILINE_CODESIGN_IDENTITY="<identity>"` so local test builds can be re-signed with a stable local/self-signed code-signing identity instead of a changing ad-hoc signature. Keep using `-` when no local identity is available.
+
+Create a local self-signed code-signing identity once:
+
+```bash
+npm run desktop:codesign:local
+```
+
+Then run local builds with:
+
+```bash
+ASCILINE_CODESIGN_IDENTITY="ASCII VJ Remix Local Code Signing" npm run desktop:run-local
+```
+
+macOS will still require you to grant media permissions once for that new stable identity, but subsequent local rebuilds should reuse the same TCC grants as long as the bundle identifier and signing identity stay stable.
 
 ## Developer ID Notarization Track
 

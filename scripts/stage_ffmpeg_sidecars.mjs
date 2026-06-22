@@ -165,7 +165,7 @@ async function main() {
       `Source/build review: ${source}`,
       variant ? `Variant: ${variant}` : null,
       '',
-      'This package contains FFmpeg and ffprobe binaries staged for ASCILINE Remix.',
+      'This package contains FFmpeg and ffprobe binaries staged for ASCII VJ Remix.',
       'Keep the corresponding license text and source/build provenance with release materials.',
       ''
     ].filter(Boolean).join('\n')

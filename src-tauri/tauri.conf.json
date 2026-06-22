@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "ASCILINE Remix",
+  "productName": "ASCII VJ Remix",
   "version": "0.1.8",
   "identifier": "com.asciline.remix",
   "build": {
@@ -10,15 +10,18 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",
-        "title": "ASCILINE Remix",
+        "title": "ASCII VJ Remix",
         "width": 1440,
         "height": 920,
         "minWidth": 1024,
         "minHeight": 720,
         "resizable": true,
+        "useHttpsScheme": true,
+        "backgroundThrottling": "disabled",
         "fullscreen": false,
         "center": true
       }
@@ -46,11 +49,13 @@
       "icons/icon.ico"
     ],
     "macOS": {
+      "entitlements": "Entitlements.plist",
       "infoPlist": "Info.plist",
       "signingIdentity": "-"
     },
     "resources": [
-      "resources/ffmpeg/**/*"
+      "resources/ffmpeg/**/*",
+      "../media/**/*"
     ]
   },
   "plugins": {

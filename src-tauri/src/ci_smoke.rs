@@ -1,9 +1,11 @@
+use crate::native_output::NativeOutputState;
 use serde::Serialize;
+use serde_json::json;
 use std::{
     env, fs, process, thread,
     time::{Duration, Instant},
 };
-use tauri::{App, Runtime};
+use tauri::{App, Emitter, Manager};
 use tauri_plugin_updater::UpdaterExt;
 
 #[derive(Serialize)]
@@ -23,6 +25,8 @@ struct SmokeReport {
     install_finished: bool,
     forced_update: bool,
     forced_from_version: Option<String>,
+    backend: Option<String>,
+    media_url: Option<String>,
     elapsed_ms: u128,
     error: Option<String>,
 }
@@ -45,21 +49,27 @@ impl SmokeReport {
             install_finished: false,
             forced_update: false,
             forced_from_version: None,
+            backend: None,
+            media_url: None,
             elapsed_ms,
             error: None,
         }
     }
 }
 
-pub fn maybe_spawn<R: Runtime>(app: &App<R>) {
+pub fn maybe_spawn(app: &App) {
     if env::var_os("ASCILINE_UPDATER_SMOKE").is_some() {
         spawn_updater_smoke(app);
+    } else if env::var_os("ASCILINE_UI_PERF_SMOKE").is_some() {
+        spawn_ui_perf_smoke(app);
+    } else if env::var_os("ASCILINE_NATIVE_OUTPUT_SMOKE").is_some() {
+        spawn_native_output_smoke(app);
     } else if matches!(env::var("ASCILINE_DESKTOP_SMOKE").as_deref(), Ok("launch")) {
         spawn_launch_smoke(app);
     }
 }
 
-fn spawn_launch_smoke<R: Runtime>(app: &App<R>) {
+fn spawn_launch_smoke(app: &App) {
     let package_version = app.package_info().version.to_string();
     let delay_ms = env::var("ASCILINE_DESKTOP_SMOKE_DELAY_MS")
         .ok()
@@ -76,7 +86,7 @@ fn spawn_launch_smoke<R: Runtime>(app: &App<R>) {
     });
 }
 
-fn spawn_updater_smoke<R: Runtime>(app: &App<R>) {
+fn spawn_updater_smoke(app: &App) {
     let handle = app.handle().clone();
     let package_version = app.package_info().version.to_string();
     let mode = env::var("ASCILINE_UPDATER_SMOKE").unwrap_or_else(|_| "check".to_string());
@@ -119,6 +129,8 @@ fn spawn_updater_smoke<R: Runtime>(app: &App<R>) {
                     install_finished: false,
                     forced_update,
                     forced_from_version,
+                    backend: None,
+                    media_url: None,
                     elapsed_ms: start.elapsed().as_millis(),
                     error: Some(error),
                 },
@@ -128,8 +140,8 @@ fn spawn_updater_smoke<R: Runtime>(app: &App<R>) {
     });
 }
 
-async fn run_updater_smoke<R: Runtime>(
-    handle: tauri::AppHandle<R>,
+async fn run_updater_smoke(
+    handle: tauri::AppHandle,
     package_version: String,
     mode: String,
     expected_version: Option<String>,
@@ -167,6 +179,8 @@ async fn run_updater_smoke<R: Runtime>(
             install_finished: false,
             forced_update,
             forced_from_version,
+            backend: None,
+            media_url: None,
             elapsed_ms: 0,
             error: None,
         });
@@ -215,6 +229,8 @@ async fn run_updater_smoke<R: Runtime>(
         install_finished: false,
         forced_update,
         forced_from_version,
+        backend: None,
+        media_url: None,
         elapsed_ms: 0,
         error: None,
     };
@@ -228,6 +244,187 @@ async fn run_updater_smoke<R: Runtime>(
     }
 
     Ok(report)
+}
+
+fn spawn_native_output_smoke(app: &App) {
+    let handle = app.handle().clone();
+    let package_version = app.package_info().version.to_string();
+    let state = app.state::<NativeOutputState>().inner().clone();
+    let media_url = env::var("ASCILINE_NATIVE_OUTPUT_SMOKE_MEDIA")
+        .unwrap_or_else(|_| "media/point-click-test-30s.mp4".to_string());
+    let delay_ms = env::var("ASCILINE_NATIVE_OUTPUT_SMOKE_DELAY_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(750);
+    let duration_ms = env::var("ASCILINE_NATIVE_OUTPUT_SMOKE_DURATION_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(7000);
+
+    tauri::async_runtime::spawn(async move {
+        let start = Instant::now();
+        thread::sleep(Duration::from_millis(delay_ms));
+        let result =
+            crate::native_output::open_native_output_smoke(handle.clone(), &state, &media_url)
+                .await;
+
+        match result {
+            Ok(output) if output.opened => {
+                let reactive = env::var("ASCILINE_NATIVE_OUTPUT_SMOKE_REACTIVE")
+                    .map(|value| value != "0")
+                    .unwrap_or(true);
+                if reactive {
+                    let deadline = Instant::now() + Duration::from_millis(duration_ms);
+                    let mut step = 0u64;
+                    while Instant::now() < deadline {
+                        let _ = crate::native_output::update_native_output_smoke_params(
+                            handle.clone(),
+                            &state,
+                            &media_url,
+                            step,
+                        )
+                        .await;
+                        step = step.wrapping_add(1);
+                        thread::sleep(Duration::from_millis(16));
+                    }
+                } else {
+                    thread::sleep(Duration::from_millis(duration_ms));
+                }
+                finish(
+                    SmokeReport {
+                        ok: true,
+                        kind: "native-output".to_string(),
+                        mode: "perf".to_string(),
+                        package_version,
+                        expected_version: None,
+                        found_update: false,
+                        update_version: None,
+                        current_version: None,
+                        target: None,
+                        download_url: None,
+                        downloaded_bytes: None,
+                        install_started: false,
+                        install_finished: false,
+                        forced_update: false,
+                        forced_from_version: None,
+                        backend: Some(output.backend),
+                        media_url: Some(media_url),
+                        elapsed_ms: start.elapsed().as_millis(),
+                        error: None,
+                    },
+                    0,
+                );
+            }
+            Ok(output) => finish(
+                SmokeReport {
+                    ok: false,
+                    kind: "native-output".to_string(),
+                    mode: "perf".to_string(),
+                    package_version,
+                    expected_version: None,
+                    found_update: false,
+                    update_version: None,
+                    current_version: None,
+                    target: None,
+                    download_url: None,
+                    downloaded_bytes: None,
+                    install_started: false,
+                    install_finished: false,
+                    forced_update: false,
+                    forced_from_version: None,
+                    backend: Some(output.backend),
+                    media_url: Some(media_url),
+                    elapsed_ms: start.elapsed().as_millis(),
+                    error: output.reason,
+                },
+                1,
+            ),
+            Err(error) => finish(
+                SmokeReport {
+                    ok: false,
+                    kind: "native-output".to_string(),
+                    mode: "perf".to_string(),
+                    package_version,
+                    expected_version: None,
+                    found_update: false,
+                    update_version: None,
+                    current_version: None,
+                    target: None,
+                    download_url: None,
+                    downloaded_bytes: None,
+                    install_started: false,
+                    install_finished: false,
+                    forced_update: false,
+                    forced_from_version: None,
+                    backend: None,
+                    media_url: Some(media_url),
+                    elapsed_ms: start.elapsed().as_millis(),
+                    error: Some(error),
+                },
+                1,
+            ),
+        }
+    });
+}
+
+fn spawn_ui_perf_smoke(app: &App) {
+    let handle = app.handle().clone();
+    let package_version = app.package_info().version.to_string();
+    let media_url = env::var("ASCILINE_UI_PERF_SMOKE_MEDIA")
+        .unwrap_or_else(|_| "media/point-click-test-30s.mp4".to_string());
+    let backend = env::var("ASCILINE_UI_PERF_SMOKE_BACKEND").unwrap_or_else(|_| "auto".to_string());
+    let delay_ms = env::var("ASCILINE_UI_PERF_SMOKE_DELAY_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(1200);
+    let duration_ms = env::var("ASCILINE_UI_PERF_SMOKE_DURATION_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(9000);
+    let sample_ms = env::var("ASCILINE_UI_PERF_SMOKE_SAMPLE_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(500);
+
+    thread::spawn(move || {
+        let start = Instant::now();
+        thread::sleep(Duration::from_millis(delay_ms));
+        let payload = json!({
+            "mediaUrl": media_url,
+            "backend": backend,
+            "durationMs": duration_ms,
+            "sampleMs": sample_ms
+        });
+        for _ in 0..12 {
+            let _ = handle.emit_to("main", "asciline-ui-perf-smoke", payload.clone());
+            thread::sleep(Duration::from_millis(250));
+        }
+        thread::sleep(Duration::from_millis(duration_ms + 3500));
+        finish(
+            SmokeReport {
+                ok: true,
+                kind: "ui-perf".to_string(),
+                mode: "perf".to_string(),
+                package_version,
+                expected_version: None,
+                found_update: false,
+                update_version: None,
+                current_version: None,
+                target: None,
+                download_url: None,
+                downloaded_bytes: None,
+                install_started: false,
+                install_finished: false,
+                forced_update: false,
+                forced_from_version: None,
+                backend: None,
+                media_url: Some(media_url),
+                elapsed_ms: start.elapsed().as_millis(),
+                error: None,
+            },
+            0,
+        );
+    });
 }
 
 fn emit_report(report: &SmokeReport, code: i32) {

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-update-native-output-frame"
+description = "Enables the update_native_output_frame command without any pre-configured scope."
+commands.allow = ["update_native_output_frame"]
+
+[[permission]]
+identifier = "deny-update-native-output-frame"
+description = "Denies the update_native_output_frame command without any pre-configured scope."
+commands.deny = ["update_native_output_frame"]

@@ -1,11 +1,13 @@
 use crate::media_engine::ffmpeg::{
-    probe_video, spawn_rgb_reader, DecodeConfig, FfmpegBinaries, VideoProbe,
+    probe_video, spawn_rgb_reader, spawn_rgb_reader_with_options, DecodeConfig, FfmpegBinaries,
+    FfmpegRgbFrameReader, RgbReaderOptions, VideoProbe,
 };
 use crate::media_engine::frame_prep::RenderMode;
 use crate::media_engine::pipeline::{
     checksum_hex, run_stream_pipeline, EncodedStreamFrame, StreamPipelineConfig,
     StreamPipelineReader, StreamPipelineSummary,
 };
+use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -14,11 +16,14 @@ use std::time::UNIX_EPOCH;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
-const MEDIA_EXTENSIONS: &[&str] = &["mp4", "webm", "jpg", "jpeg", "png", "gif", "svg"];
+const MEDIA_EXTENSIONS: &[&str] = &["mp4", "webm", "mkv", "jpg", "jpeg", "png", "gif", "svg"];
 const MAX_PREVIEW_FRAMES: usize = 240;
 const MAX_SESSION_FRAMES: usize = 100_000;
 const MAX_SESSION_FRAME_BATCH: usize = 12;
 const MAX_PREVIEW_CELLS: u64 = 1_000_000;
+const MAX_RAW_VIDEO_FRAMES: usize = 1_000_000;
+const MAX_RAW_VIDEO_FRAME_BATCH: usize = 4;
+const MAX_RAW_VIDEO_PIXELS: u64 = 1_000_000;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -94,6 +99,46 @@ pub struct NativeMediaSessionStatus {
     pub rows: u32,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RawVideoSessionRequest {
+    pub width: u32,
+    pub height: u32,
+    pub max_frames: usize,
+    pub fps: Option<f64>,
+    pub start_seconds: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RawVideoSessionInit {
+    pub session_id: String,
+    pub source_id: String,
+    pub fps: f64,
+    pub width: u32,
+    pub height: u32,
+    pub probe: VideoProbe,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RawVideoFrame {
+    pub session_id: String,
+    pub index: usize,
+    pub time_seconds: f64,
+    pub width: u32,
+    pub height: u32,
+    pub rgb_base64: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RawVideoFrameBatch {
+    pub session_id: String,
+    pub frames: Vec<RawVideoFrame>,
+    pub ended: bool,
+}
+
 #[derive(Debug, Default)]
 pub struct MediaRegistry {
     inner: Mutex<MediaRegistryInner>,
@@ -102,6 +147,11 @@ pub struct MediaRegistry {
 #[derive(Debug, Default)]
 pub struct MediaSessions {
     inner: Mutex<MediaSessionsInner>,
+}
+
+#[derive(Debug, Default)]
+pub struct RawVideoSessions {
+    inner: Mutex<RawVideoSessionsInner>,
 }
 
 #[derive(Debug, Default)]
@@ -116,6 +166,12 @@ struct MediaSessionsInner {
     sessions: HashMap<String, NativeMediaSession>,
 }
 
+#[derive(Debug, Default)]
+struct RawVideoSessionsInner {
+    next_id: u64,
+    sessions: HashMap<String, RawVideoSession>,
+}
+
 #[derive(Debug)]
 struct NativeMediaSession {
     source_id: String,
@@ -125,6 +181,14 @@ struct NativeMediaSession {
     cols: u32,
     rows: u32,
     pipeline: StreamPipelineReader,
+}
+
+#[derive(Debug)]
+struct RawVideoSession {
+    fps: f64,
+    width: u32,
+    height: u32,
+    reader: FfmpegRgbFrameReader,
 }
 
 impl MediaRegistry {
@@ -194,7 +258,7 @@ impl MediaRegistry {
         Ok(inner.files.remove(id).is_some())
     }
 
-    fn path_for(&self, id: &str) -> Result<PathBuf, String> {
+    pub(crate) fn path_for(&self, id: &str) -> Result<PathBuf, String> {
         let inner = self
             .inner
             .lock()
@@ -333,6 +397,88 @@ impl MediaSessions {
     }
 }
 
+impl RawVideoSessions {
+    fn insert(
+        &self,
+        _source_id: String,
+        fps: f64,
+        width: u32,
+        height: u32,
+        reader: FfmpegRgbFrameReader,
+    ) -> Result<String, String> {
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| "raw video session lock poisoned".to_string())?;
+        inner.next_id = inner.next_id.saturating_add(1);
+        let session_id = format!("raw-session-{}", inner.next_id);
+        inner.sessions.insert(
+            session_id.clone(),
+            RawVideoSession {
+                fps,
+                width,
+                height,
+                reader,
+            },
+        );
+        Ok(session_id)
+    }
+
+    fn read_frames(
+        &self,
+        session_id: &str,
+        max_frames: usize,
+    ) -> Result<RawVideoFrameBatch, String> {
+        let limit = max_frames.clamp(1, MAX_RAW_VIDEO_FRAME_BATCH);
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| "raw video session lock poisoned".to_string())?;
+        let mut frames = Vec::with_capacity(limit);
+        let mut ended = false;
+
+        for _ in 0..limit {
+            let Some(session) = inner.sessions.get_mut(session_id) else {
+                return Err("raw video session is unavailable".to_string());
+            };
+            let next = session
+                .reader
+                .read_next_frame()
+                .map_err(|error| error.to_string())?;
+            let Some(frame) = next else {
+                ended = true;
+                break;
+            };
+            frames.push(RawVideoFrame {
+                session_id: session_id.to_string(),
+                index: frame.index,
+                time_seconds: frame.index as f64 / session.fps.max(0.001),
+                width: session.width,
+                height: session.height,
+                rgb_base64: general_purpose::STANDARD.encode(frame.data),
+            });
+        }
+
+        if ended {
+            inner.sessions.remove(session_id);
+        }
+
+        Ok(RawVideoFrameBatch {
+            session_id: session_id.to_string(),
+            frames,
+            ended,
+        })
+    }
+
+    fn stop(&self, session_id: &str) -> Result<bool, String> {
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| "raw video session lock poisoned".to_string())?;
+        Ok(inner.sessions.remove(session_id).is_some())
+    }
+}
+
 fn native_frame_from_encoded(
     session_id: &str,
     fps: f64,
@@ -351,7 +497,7 @@ fn native_frame_from_encoded(
     }
 }
 
-fn media_binaries_for_app(app: &AppHandle) -> FfmpegBinaries {
+pub(crate) fn media_binaries_for_app(app: &AppHandle) -> FfmpegBinaries {
     FfmpegBinaries::with_paths(
         resolve_media_binary(app, "ASCILINE_FFMPEG", "ffmpeg"),
         resolve_media_binary(app, "ASCILINE_FFPROBE", "ffprobe"),
@@ -566,6 +712,61 @@ pub fn stop_media_session(
 }
 
 #[tauri::command]
+pub async fn start_raw_video_session(
+    id: String,
+    request: RawVideoSessionRequest,
+    app: AppHandle,
+    registry: State<'_, MediaRegistry>,
+    sessions: State<'_, RawVideoSessions>,
+) -> Result<RawVideoSessionInit, String> {
+    validate_raw_video_request(&request)?;
+    let path = registry.path_for(&id)?;
+    let binaries = media_binaries_for_app(&app);
+    let probe = probe_video(&binaries, &path).map_err(|error| error.to_string())?;
+    let fps = request
+        .fps
+        .or(probe.fps)
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .unwrap_or(24.0)
+        .clamp(1.0, 60.0);
+    let decode = DecodeConfig::new(request.width, request.height, request.max_frames)
+        .map_err(|error| error.to_string())?;
+    let options = RgbReaderOptions {
+        start_seconds: request.start_seconds,
+        output_fps: Some(fps),
+    };
+    let reader = spawn_rgb_reader_with_options(&binaries, &path, &decode, &options)
+        .map_err(|error| error.to_string())?;
+    let session_id = sessions.insert(id.clone(), fps, request.width, request.height, reader)?;
+
+    Ok(RawVideoSessionInit {
+        session_id,
+        source_id: id,
+        fps,
+        width: request.width,
+        height: request.height,
+        probe,
+    })
+}
+
+#[tauri::command]
+pub fn read_raw_video_frames(
+    session_id: String,
+    max_frames: usize,
+    sessions: State<'_, RawVideoSessions>,
+) -> Result<RawVideoFrameBatch, String> {
+    sessions.read_frames(&session_id, max_frames)
+}
+
+#[tauri::command]
+pub fn stop_raw_video_session(
+    session_id: String,
+    sessions: State<'_, RawVideoSessions>,
+) -> Result<bool, String> {
+    sessions.stop(&session_id)
+}
+
+#[tauri::command]
 pub fn list_media_sessions(
     sessions: State<'_, MediaSessions>,
 ) -> Result<Vec<NativeMediaSessionStatus>, String> {
@@ -587,6 +788,22 @@ fn validate_pipeline_request(
     Ok(())
 }
 
+fn validate_raw_video_request(request: &RawVideoSessionRequest) -> Result<(), String> {
+    if request.max_frames == 0 || request.max_frames > MAX_RAW_VIDEO_FRAMES {
+        return Err(format!(
+            "maxFrames must be between 1 and {MAX_RAW_VIDEO_FRAMES}"
+        ));
+    }
+    if u64::from(request.width) * u64::from(request.height) > MAX_RAW_VIDEO_PIXELS {
+        return Err(format!(
+            "raw video dimensions must contain at most {MAX_RAW_VIDEO_PIXELS} pixels"
+        ));
+    }
+    DecodeConfig::new(request.width, request.height, request.max_frames)
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 fn extension_for_path(path: &Path) -> String {
     path.extension()
         .and_then(|extension| extension.to_str())
@@ -605,6 +822,7 @@ fn mime_type_for_extension(extension: &str) -> &'static str {
     match extension {
         "mp4" => "video/mp4",
         "webm" => "video/webm",
+        "mkv" => "video/x-matroska",
         "jpg" | "jpeg" => "image/jpeg",
         "png" => "image/png",
         "gif" => "image/gif",

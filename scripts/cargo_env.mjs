@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 
 function commandWorks(command, args = ['--version'], env = process.env) {
@@ -27,6 +28,25 @@ if (!commandWorks('cargo', ['--version'], env)) {
   const toolchainBin = rustupToolchainBin();
   if (toolchainBin) {
     env.PATH = `${toolchainBin}${path.delimiter}${env.PATH || ''}`;
+  }
+}
+
+if (process.platform === 'darwin') {
+  const systemSwiftRuntime = '/usr/lib/swift';
+  const swiftRuntimePaths = existsSync(systemSwiftRuntime)
+    ? [systemSwiftRuntime]
+    : [
+        '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/macosx',
+        '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.5/macosx',
+        '/Library/Developer/CommandLineTools/usr/lib/swift/macosx',
+        '/Library/Developer/CommandLineTools/usr/lib/swift-5.5/macosx'
+      ].filter(existsSync);
+  if (swiftRuntimePaths.length) {
+    const existing = env.DYLD_FALLBACK_LIBRARY_PATH || '';
+    env.DYLD_FALLBACK_LIBRARY_PATH = [
+      ...swiftRuntimePaths,
+      ...existing.split(path.delimiter).filter(Boolean)
+    ].join(path.delimiter);
   }
 }
 

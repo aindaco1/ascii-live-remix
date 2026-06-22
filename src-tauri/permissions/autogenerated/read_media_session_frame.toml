@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-read-media-session-frame"
+description = "Enables the read_media_session_frame command without any pre-configured scope."
+commands.allow = ["read_media_session_frame"]
+
+[[permission]]
+identifier = "deny-read-media-session-frame"
+description = "Denies the read_media_session_frame command without any pre-configured scope."
+commands.deny = ["read_media_session_frame"]

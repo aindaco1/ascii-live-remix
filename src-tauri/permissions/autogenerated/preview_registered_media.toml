@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-preview-registered-media"
+description = "Enables the preview_registered_media command without any pre-configured scope."
+commands.allow = ["preview_registered_media"]
+
+[[permission]]
+identifier = "deny-preview-registered-media"
+description = "Denies the preview_registered_media command without any pre-configured scope."
+commands.deny = ["preview_registered_media"]

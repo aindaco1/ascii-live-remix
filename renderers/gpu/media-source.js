@@ -4,7 +4,7 @@
  */
 
 const MEDIA_EXTENSIONS = {
-    video: ['.mp4', '.webm'],
+    video: ['.mp4', '.webm', '.mkv'],
     image: ['.jpg', '.jpeg', '.png', '.tif', '.tiff', '.gif', '.svg']
 };
 

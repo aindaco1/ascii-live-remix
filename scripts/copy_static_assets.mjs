@@ -11,6 +11,13 @@ const runtimeAssets = [
   ['assets/fonts', 'assets/fonts'],
   ['renderers/gpu/assets', 'renderers/gpu/assets']
 ];
+const excludedRuntimeAssets = new Set([
+  'media/point-click-test2.mp4'
+]);
+
+function runtimeAssetRel(sourcePath) {
+  return path.relative(root, sourcePath).split(path.sep).join('/');
+}
 
 async function exists(sourcePath) {
   try {
@@ -30,6 +37,10 @@ for (const [from, to] of runtimeAssets) {
 
   const targetPath = path.join(dist, to);
   await mkdir(path.dirname(targetPath), { recursive: true });
-  await cp(sourcePath, targetPath, { recursive: true, force: true });
+  await cp(sourcePath, targetPath, {
+    recursive: true,
+    force: true,
+    filter: (source) => !excludedRuntimeAssets.has(runtimeAssetRel(source))
+  });
   console.log(`copied ${from} -> dist/${to}`);
 }

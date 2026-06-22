@@ -1,8 +1,8 @@
 [package]
 name = "asciline-remix"
 version = "0.1.8"
-description = "ASCILINE Remix renderer lab desktop shell"
-authors = ["ASCILINE Remix Contributors"]
+description = "ASCII VJ Remix renderer lab desktop shell"
+authors = ["ASCII VJ Remix Contributors"]
 edition = "2021"
 
 [lib]
@@ -10,13 +10,27 @@ name = "asciline_remix_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
+cc = "1"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
 flate2 = "1"
-tauri = { version = "2", features = ["protocol-asset"] }
+base64 = "0.22"
+cpal = "0.18.1"
+image = { version = "0.25", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
+pollster = "0.4"
+resvg = "0.47"
+tauri = { version = "2", features = ["macos-private-api", "protocol-asset", "unstable"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+softbuffer = "0.4.8"
+wgpu = { version = "29", default-features = false, features = ["std", "parking_lot", "wgsl", "metal", "vulkan", "dx12", "gles"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6.2"
+objc2 = "0.6.4"
+objc2-foundation = "0.3.2"
+screencapturekit = { version = "8.0.0", features = ["macos_13_0"] }

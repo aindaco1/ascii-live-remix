@@ -1,8 +1,8 @@
-# ASCILINE Remix Renderer Roadmap
+# ASCII VJ Remix Renderer Roadmap
 
 ## Purpose
 
-ASCILINE Remix is a fork of ASCILINE focused on renderer experimentation. The goal is to combine:
+ASCII VJ Remix is a fork of ASCILINE focused on renderer experimentation. The goal is to combine:
 
 - The high-performance streamed frame pipeline from this repository: FastAPI, OpenCV frame preparation, adaptive WebSocket codec, audio-master sync, buffering, frame dropping, and Canvas fallback rendering.
 - The browser GPU visual output from `ascii-point-and-click`: WebGPU primary rendering, WebGL2 fallback rendering, browser-only media sources, and the point-and-click renderer defaults.
@@ -275,7 +275,7 @@ Audio reactivity is an ephemeral modulation layer over the canonical renderer pa
 
 - **Audio file:** selected through a local file picker and played through Web Audio. The file remains local and is never uploaded.
 - **Mic / input:** captured with `getUserMedia({ audio: true })`; echo cancellation, noise suppression, and automatic gain are disabled by default so analysis receives a cleaner signal.
-- **Display audio:** captured with `getDisplayMedia()` when the browser and OS expose a display, window, or tab audio track. This is permission-gated and browser-dependent; Chromium on macOS is most reliable when sharing a browser tab with audio enabled, while app/window capture often omits audio.
+- **Display audio:** captured with `getDisplayMedia()` when the browser and OS expose a display, window, or tab audio track. This is permission-gated and browser-dependent; Chromium on macOS is most reliable when sharing a browser tab with audio enabled, while app/window capture often omits audio. The UI must treat a video-only display stream as a failed audio source, not as an active listener.
 
 ### Analysis Model
 
@@ -298,7 +298,7 @@ Audio reactivity is an ephemeral modulation layer over the canonical renderer pa
 - Add Tauri providers later for local audio files selected via dialog and platform-specific loopback/system audio capture.
 - Prefer bundling any required native sidecar or Rust audio capture implementation with the app; do not add online audio dependencies.
 - Treat system audio capture as platform-specific:
-  - macOS may require ScreenCaptureKit or user-approved audio capture paths.
+  - macOS app/window/system audio currently uses a native ScreenCaptureKit provider when `getDisplayMedia()` returns no audio track. ScreenCaptureKit is governed by macOS Screen & System Audio Recording permission, so migrate this provider to Core Audio Taps for a narrower System Audio Recording-only prompt once the basic desktop app path is stable.
   - Windows can use WASAPI loopback.
   - Linux may depend on PipeWire/PulseAudio availability.
 - Keep modulation output as renderer params so the visual renderer does not care whether the features came from Web Audio or a Tauri-native provider.
@@ -559,7 +559,7 @@ The desktop app should be a thin, secure wrapper around the renderer lab, not a 
    - Replace browser pop-out with a Tauri output window in desktop builds.
    - Preserve browser pop-out fallback.
    - Add display selection and fullscreen persistence.
-   - Status: initial static-source implementation is in place. Tauri desktop builds open an `output.html` webview for static video/image sources, sync renderer params over Tauri events, and keep browser pop-out as the fallback for browser builds, stream mode, and camera mode. The main toolbar now exposes a persisted output-display selector backed by Tauri monitor enumeration, with auto-external placement as the default when multiple displays are available. The output window persists and restores its own fullscreen state. A deterministic secondary-display simulation test now covers auto-external placement, explicit display selection, stale preference fallback, and browser pop-out screen placement without requiring real multi-monitor hardware in CI. Follow-up work still needs real secondary-display validation and broader source support.
+   - Status: native output is in place. Tauri desktop builds now prefer a plain native output window backed by a native `wgpu` surface, using Metal on macOS, D3D12 on Windows, and Vulkan/GLES on Linux. Rust resolves bundled demo media resources or session-registered custom media ids for file-backed video sources, decodes through the bundled FFmpeg path, uploads the latest source frame to the GPU, applies the same cell color math/sample/jitter controls as the browser WebGPU renderer in a compute pass, and updates params live without a second webview-rendered canvas. Static PNG/JPEG/GIF/WebP/SVG images decode locally in Rust and render through the same native GPU presenter. `softbuffer` remains a compatibility fallback if GPU adapter/surface setup or a GPU frame fails. On macOS, single-camera Pop Out now prefers a platform-native AVFoundation capture provider compiled into the Tauri binary: `AVCaptureVideoDataOutput` discards late frames, stores only the newest BGRA frame after RGB conversion, and feeds the existing native GPU presenter without WebView canvas readback, IPC snapshots, FFmpeg subprocess buffering, or FFmpeg FPS conversion. FFmpeg/AVFoundation remains a camera fallback if the native provider cannot start. Multi-camera mix, stream, and other mirrored sources send bounded raw pixel snapshots of the already-rendered main surface into the same native presenter, falling back to encoded snapshots only if raw IPC is unavailable. The older `output.html` webview remains as a fallback for browser builds and native-presenter failures. The main toolbar exposes a persisted output-display selector backed by Tauri monitor enumeration, with auto-external placement as the default when multiple displays are available. A deterministic secondary-display simulation test covers auto-external placement, explicit display selection, stale preference fallback, and browser pop-out screen placement without requiring real multi-monitor hardware in CI. Follow-up work still needs real secondary-display validation plus native multi-camera mixing and stream output; mirrored sources remain bounded by WebView canvas readback plus IPC. The next camera-latency step is replacing the current native RGB copy/upload path with direct CVPixelBuffer/Metal texture sharing on macOS, then adding Media Foundation/D3D texture sharing on Windows and PipeWire/V4L2/Vulkan or GLES interop on Linux.
 
 5. **Optional Stream Sidecar**
    - Decide whether to package Python, package a compiled server sidecar, or port the stream path.
@@ -663,7 +663,7 @@ Reference docs used for the initial plan:
 - Add a Tauri v2 skeleton after the frontend build is deterministic. **Done.**
 - Add a source-provider adapter for browser files vs. Tauri-selected filesystem paths. **Done.**
 - Add a Rust-owned selected-media registry for Tauri native stream/probe commands. **Initial implementation done.**
-- Implement a native Tauri output window after browser pop-out behavior stabilizes. **Initial implementation done.**
+- Implement a native Tauri output window after browser pop-out behavior stabilizes. **Native `wgpu` video/static image/SVG/single-camera output is preferred; `softbuffer`, raw-pixel mirror surfaces, and old webview output remain fallbacks.**
 - Decide on the stream sidecar/native rewrite strategy before packaging stream mode for end users.
 - Validate native stream session batches through the Rust/FFmpeg media pipeline before packaging stream mode. **Initial implementation done.**
 - Keep `npm run check:offline`, `npm run check:desktop`, and `npm run smoke:static` passing before packaging changes.
@@ -671,10 +671,22 @@ Reference docs used for the initial plan:
 ### Phase 9: Audio-Reactive Controls
 
 - Add the compact Audio Reactivity panel.
-- Add local audio file, input, and display-audio sources through Web Audio.
+- Add local audio file, input, and display-audio sources through Web Audio. **Initial implementation done.** Mic/input starts automatically, concrete input devices are selectable without a synthetic Default row, switching input devices restarts capture, and browser display capture now rejects video-only streams with a clear status.
 - Add analysis meters and audio-reactive presets.
 - Route generated features through a non-persistent `effectiveParams` layer.
 - Verify static GPU/WebGL, Canvas fallback, stream Canvas, preset transitions, and pop-out output continue to consume current render params without regressions.
+
+### Phase 10: Native System Audio Providers
+
+- Add a Tauri audio-source adapter branch for native feature streams so renderer modulation remains DRY across Web Audio and Rust-native providers.
+- Implement macOS native system audio capture:
+  - current bridge: ScreenCaptureKit `SCStream` with `capturesAudio`, stereo 48 kHz audio, and current-process audio excluded where possible.
+  - next bridge: Core Audio Taps (`AudioHardwareCreateProcessTap`/aggregate-device tap) with `NSAudioCaptureUsageDescription` so ASCILINE can request System Audio Recording only instead of Screen & System Audio Recording.
+  - support all-system audio first, then app/process-level filtering if the Core Audio Tap path proves stable.
+  - analyze PCM in Rust or forward bounded feature frames to JS; do not stream raw unbounded audio samples over Tauri IPC.
+  - preserve current mic/input Web Audio behavior as the default and use native system audio only when the user selects System Audio in Tauri.
+  - keep all implementation and dependencies bundled locally with the app.
+- Add Windows WASAPI loopback and Linux PipeWire/PulseAudio providers after macOS is stable.
 
 ## Validation Strategy
 

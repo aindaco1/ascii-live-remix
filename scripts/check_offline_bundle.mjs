@@ -28,7 +28,12 @@ const allowedNamespaceUrls = new Set([
 ]);
 const allowedLocalUrlPrefixes = [
   'http://asset.localhost',
-  'https://asset.localhost'
+  'https://asset.localhost',
+  'http://127.0.0.1',
+  'http://localhost',
+  'http://ipc.localhost',
+  'ws://127.0.0.1',
+  'ws://localhost'
 ];
 
 async function walk(directory) {
@@ -52,6 +57,8 @@ async function scanFile(filePath) {
     let match;
     while ((match = check.pattern.exec(text)) !== null) {
       const matchedText = match[2] || match[0];
+      const matchedStart = match.index + match[0].indexOf(matchedText);
+      if (matchedStart > 0 && text[matchedStart - 1] === '\\') continue;
       if (allowedNamespaceUrls.has(matchedText)) continue;
       if (allowedLocalUrlPrefixes.some((prefix) => matchedText.startsWith(prefix))) continue;
 

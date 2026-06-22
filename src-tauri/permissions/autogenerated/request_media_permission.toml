@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-request-media-permission"
+description = "Enables the request_media_permission command without any pre-configured scope."
+commands.allow = ["request_media_permission"]
+
+[[permission]]
+identifier = "deny-request-media-permission"
+description = "Denies the request_media_permission command without any pre-configured scope."
+commands.deny = ["request_media_permission"]

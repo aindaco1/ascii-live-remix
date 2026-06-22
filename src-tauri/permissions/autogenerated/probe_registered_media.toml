@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-probe-registered-media"
+description = "Enables the probe_registered_media command without any pre-configured scope."
+commands.allow = ["probe_registered_media"]
+
+[[permission]]
+identifier = "deny-probe-registered-media"
+description = "Denies the probe_registered_media command without any pre-configured scope."
+commands.deny = ["probe_registered_media"]

@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-store">
-    <title>ASCILINE Remix Renderer Lab</title>
+    <title>ASCII VJ Remix Renderer Lab</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="style.css?v=20260619-audio-reactive">
 </head>
@@ -14,9 +14,9 @@
     <div class="app-shell">
         <header class="topbar">
             <div class="brand">
-                <div class="brand-mark">AR</div>
+                <div class="brand-mark">VJ</div>
                 <div>
-                    <h1>ASCILINE Remix</h1>
+                    <h1>ASCII VJ Remix</h1>
                     <p>Renderer Lab</p>
                 </div>
             </div>
@@ -99,7 +99,7 @@
                     </div>
                     <div class="source-actions">
                         <button id="add-custom-file" type="button">Add Custom File</button>
-                        <input id="local-media-file" class="visually-hidden" type="file" accept=".mp4,.webm,.jpg,.jpeg,.png,.gif,.svg,video/mp4,video/webm,image/jpeg,image/png,image/gif,image/svg+xml" tabindex="-1" aria-hidden="true">
+                        <input id="local-media-file" class="visually-hidden" type="file" accept=".mp4,.webm,.mkv,.jpg,.jpeg,.png,.gif,.svg,video/mp4,video/webm,video/x-matroska,image/jpeg,image/png,image/gif,image/svg+xml" tabindex="-1" aria-hidden="true">
                     </div>
                 </section>
 
@@ -138,6 +138,10 @@
                                 <span>Preset</span>
                                 <select id="audio-reactive-preset"></select>
                             </label>
+                            <label class="field compact" id="audio-reactive-input-field">
+                                <span>Input</span>
+                                <select id="audio-reactive-input"></select>
+                            </label>
                         </div>
                         <div class="audio-reactive-actions">
                             <button id="audio-reactive-pick-file" type="button">Audio File</button>
@@ -160,7 +164,7 @@
     </div>
 
     <script src="codec.js?v=20260617-live-renderer-crossfade"></script>
-    <script type="module" src="app.js?v=20260620-permission-source-switches"></script>
+    <script type="module" src="app.js?v=20260620-native-system-audio"></script>
 </body>
 
 </html>
