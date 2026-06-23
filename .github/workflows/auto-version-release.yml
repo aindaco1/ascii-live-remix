@@ -1,0 +1,66 @@
+name: Auto Version Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - package.json
+      - package-lock.json
+      - src-tauri/Cargo.toml
+      - src-tauri/tauri.conf.json
+      - CHANGELOG.md
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: auto-version-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  tag-and-dispatch:
+    name: Tag and dispatch desktop release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read and validate release version
+        id: version
+        shell: bash
+        run: node scripts/check_release_version.mjs --github-output
+
+      - name: Check existing tag
+        id: tag
+        shell: bash
+        run: |
+          tag="${{ steps.version.outputs.tag }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "$tag already exists; skipping automatic release dispatch."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create release tag
+        if: steps.tag.outputs.exists != 'true'
+        shell: bash
+        run: |
+          tag="${{ steps.version.outputs.tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "Release $tag"
+          git push origin "refs/tags/$tag"
+
+      - name: Dispatch desktop release workflow
+        if: steps.tag.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh workflow run release-desktop.yml --ref main -f tag="${{ steps.version.outputs.tag }}"

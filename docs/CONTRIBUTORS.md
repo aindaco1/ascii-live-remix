@@ -302,6 +302,16 @@ Releases are published by `.github/workflows/release-desktop.yml`. The release
 matrix builds macOS, Windows, and Linux artifacts, verifies them, writes updater
 manifest fragments, merges those fragments into `latest.json`, and uploads
 installers, updater packages, signatures, and `latest.json` to GitHub Releases.
+The workflow builds from the requested `v*` tag so release artifacts match the
+tagged source, not whatever happens to be at `main` later.
+
+`.github/workflows/auto-version-release.yml` automates the common release path.
+When `package.json`, `package-lock.json`, `src-tauri/Cargo.toml`,
+`src-tauri/tauri.conf.json`, or `CHANGELOG.md` changes on `main`, it validates
+that the app versions match with `npm run release:version:check`, creates
+`vX.Y.Z` when that tag does not already exist, and dispatches the desktop
+release workflow with that tag. If the tag already exists, it skips release
+dispatch so repeated pushes do not overwrite a published version accidentally.
 
 The GitHub Releases updater reads:
 

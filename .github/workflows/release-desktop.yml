@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: GitHub release tag to create or update
+        description: Existing GitHub release tag to build and publish
         required: true
         type: string
   push:
@@ -32,6 +32,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Install Linux Tauri prerequisites
         if: runner.os == 'Linux'
@@ -224,6 +227,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Install Node
         uses: actions/setup-node@v4
@@ -244,7 +250,7 @@ jobs:
         shell: bash
         run: |
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" --title "ASCILINE Remix $RELEASE_TAG" --notes "ASCILINE Remix desktop release $RELEASE_TAG"
+            gh release create "$RELEASE_TAG" --title "ASCII VJ Remix $RELEASE_TAG" --notes "ASCII VJ Remix desktop release $RELEASE_TAG"
           fi
 
           mapfile -d '' ASSETS < <(find release-artifacts -type f \
@@ -275,6 +281,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Install Node
         uses: actions/setup-node@v4
