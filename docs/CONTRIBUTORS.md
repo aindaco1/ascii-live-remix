@@ -427,6 +427,11 @@ build directories, catching missing assets, bad `latest.json` URLs, installer
 layout issues, and broken signed updater downloads. CI-only smoke hooks are
 inactive unless these environment variables are set:
 
+The updater-hop smoke defaults to `ASCILINE_UPDATER_SMOKE_MIN_VERSION=0.9.0`.
+Older `0.1.x` releases used an incompatible updater signing key, so they can be
+kept as historical releases but cannot be used as a cryptographic updater-hop
+baseline for the current app line.
+
 - `ASCILINE_DESKTOP_SMOKE=launch`: bounded launch smoke with a report.
 - `ASCILINE_UPDATER_SMOKE=download`: checks `latest.json`, downloads the signed
   updater package, verifies its signature, writes a report, and exits.

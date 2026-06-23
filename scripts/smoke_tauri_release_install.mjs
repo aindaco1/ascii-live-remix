@@ -15,7 +15,11 @@ const previousReleaseArg = args.previousReleaseTag
   || process.env.ASCILINE_PREVIOUS_RELEASE_TAG
   || process.env.PREVIOUS_RELEASE_TAG
   || 'auto';
-const updaterInstallSmokeMinVersion = '0.1.5';
+const updaterInstallSmokeMinVersion = String(
+  args.updaterInstallSmokeMinVersion
+    || process.env.ASCILINE_UPDATER_SMOKE_MIN_VERSION
+    || '0.9.0'
+).replace(/^v/, '');
 
 try {
   await main();

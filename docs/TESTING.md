@@ -136,6 +136,8 @@ clone. `npm run bundle:release` runs the sidecar build step automatically.
 
 The release smoke downloads artifacts from GitHub Releases and checks installer
 layout, bundled assets, signed updater packages, and `latest.json` behavior.
+Updater-hop smoke uses `0.9.0` as the default minimum previous version because
+older `0.1.x` releases were signed with a different updater key.
 
 ## Manual Smoke Checklist
 
