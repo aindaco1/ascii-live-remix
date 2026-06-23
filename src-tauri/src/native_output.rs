@@ -4,7 +4,9 @@ use crate::media_engine::ffmpeg::{
     DecodeConfig, DecodedRgbFrame, FfmpegBinaries, FfmpegRgbFrameReader, RgbReaderOptions,
     VideoProbe,
 };
-use crate::system_audio::{InputAudioCaptureState, SystemAudioCaptureState, SystemAudioFeatures};
+use crate::system_audio::SystemAudioFeatures;
+#[cfg(target_os = "macos")]
+use crate::system_audio::{InputAudioCaptureState, SystemAudioCaptureState};
 use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "macos")]
@@ -861,7 +863,13 @@ fn show_native_output_window_if_requested(
         configure_native_output_window_level(app, &handle.window);
     }
     if handle.window.show().is_ok() {
+        #[cfg(target_os = "macos")]
         bring_native_output_window_forward(app, &handle.window);
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = app;
+            let _ = handle.window.set_focus();
+        }
     }
 }
 

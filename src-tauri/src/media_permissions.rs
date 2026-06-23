@@ -1,7 +1,9 @@
 use serde::Serialize;
 use std::fs::OpenOptions;
 use std::io::Write;
+#[cfg(target_os = "macos")]
 use std::sync::mpsc;
+#[cfg(target_os = "macos")]
 use std::time::Duration;
 use tauri::{AppHandle, Runtime};
 
@@ -87,7 +89,7 @@ async fn request_platform_media_permission<R: Runtime>(
     _app: AppHandle<R>,
     kind: String,
 ) -> Result<MediaPermissionResponse, String> {
-    Ok(MediaPermissionResponse::unavailable(kind))
+    Ok(MediaPermissionResponse::unavailable(&kind))
 }
 
 #[cfg(target_os = "macos")]
