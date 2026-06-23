@@ -452,6 +452,7 @@ fn ffmpeg_decode_args(
     args
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn ffmpeg_macos_camera_decode_args(
     config: &DecodeConfig,
     options: &CameraReaderOptions,
@@ -503,6 +504,7 @@ fn ffmpeg_macos_camera_decode_args(
     args
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn macos_camera_input_name(device_label: Option<&str>) -> String {
     let label = device_label
         .map(|label| {

@@ -41,6 +41,7 @@ impl SystemAudioFeatures {
         }
     }
 
+    #[cfg(target_os = "macos")]
     fn inactive() -> Self {
         Self::inactive_with_label("Native system audio")
     }

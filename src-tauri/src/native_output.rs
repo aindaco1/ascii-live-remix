@@ -4,9 +4,8 @@ use crate::media_engine::ffmpeg::{
     DecodeConfig, DecodedRgbFrame, FfmpegBinaries, FfmpegRgbFrameReader, RgbReaderOptions,
     VideoProbe,
 };
-use crate::system_audio::SystemAudioFeatures;
 #[cfg(target_os = "macos")]
-use crate::system_audio::{InputAudioCaptureState, SystemAudioCaptureState};
+use crate::system_audio::{InputAudioCaptureState, SystemAudioCaptureState, SystemAudioFeatures};
 use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "macos")]
@@ -236,12 +235,14 @@ struct NativeMirrorFrameSlot {
     version: AtomicU64,
 }
 
+#[cfg(target_os = "macos")]
 #[derive(Debug, Default)]
 struct NativeRenderFrameSlot {
     frame: Mutex<Option<Arc<DecodedRgbFrame>>>,
     version: AtomicU64,
 }
 
+#[cfg(target_os = "macos")]
 impl NativeRenderFrameSlot {
     fn set(&self, frame: DecodedRgbFrame) -> Result<(), String> {
         *self
@@ -268,6 +269,7 @@ struct NativeMirrorFrame {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 struct NativeRenderParams {
     loop_media: bool,
     cols: u32,
@@ -1326,6 +1328,7 @@ fn native_video_source_fps(probe: &VideoProbe, params: &NativeRenderParams) -> f
         .clamp(1.0, MAX_NATIVE_SOURCE_FPS)
 }
 
+#[cfg(target_os = "macos")]
 fn native_modulated_params(
     params: NativeRenderParams,
     elapsed: f64,
@@ -1356,6 +1359,7 @@ fn native_modulated_params(
     (out, changed)
 }
 
+#[cfg(target_os = "macos")]
 fn apply_native_wtf_modulation(params: &mut NativeRenderParams, elapsed: f64) {
     let base = params.clone();
     let (previous_index, next_index, progress) = native_wtf_transition(elapsed);
@@ -1393,6 +1397,7 @@ fn apply_native_wtf_modulation(params: &mut NativeRenderParams, elapsed: f64) {
     params.sample_y += signed_smooth_noise(elapsed, 2.05, 10.0) * lerp(0.01, 0.05, medium);
 }
 
+#[cfg(target_os = "macos")]
 fn native_wtf_transition(elapsed: f64) -> (u64, u64, f64) {
     let mut cursor = 0.0;
     let mut index = 0_u64;
@@ -1412,10 +1417,12 @@ fn native_wtf_transition(elapsed: f64) -> (u64, u64, f64) {
     native_wtf_transition(elapsed)
 }
 
+#[cfg(target_os = "macos")]
 fn native_wtf_duration(index: u64) -> f64 {
     lerp(1.0, 5.0, hash01(index as f64 * 1.37 + 17.0))
 }
 
+#[cfg(target_os = "macos")]
 fn native_wtf_target(base: &NativeRenderParams, index: u64) -> NativeRenderParams {
     let mut target = base.clone();
     target.cols = native_wtf_random_int(index, 1.0, 220, 920);
@@ -1437,16 +1444,19 @@ fn native_wtf_target(base: &NativeRenderParams, index: u64) -> NativeRenderParam
     target
 }
 
+#[cfg(target_os = "macos")]
 fn native_wtf_random(index: u64, salt: f64, min: f64, max: f64) -> f64 {
     lerp(min, max, hash01(index as f64 * 19.19 + salt * 101.7))
 }
 
+#[cfg(target_os = "macos")]
 fn native_wtf_random_int(index: u64, salt: f64, min: u32, max: u32) -> u32 {
     native_wtf_random(index, salt, min as f64, max as f64)
         .round()
         .clamp(min as f64, max as f64) as u32
 }
 
+#[cfg(target_os = "macos")]
 fn interpolate_native_wtf_params(
     out: &mut NativeRenderParams,
     from: &NativeRenderParams,
@@ -1472,6 +1482,7 @@ fn interpolate_native_wtf_params(
     out.sample_y = lerp(from.sample_y, to.sample_y, t);
 }
 
+#[cfg(target_os = "macos")]
 fn apply_native_audio_modulation(
     params: &mut NativeRenderParams,
     base: &NativeRenderParams,
@@ -1501,6 +1512,7 @@ fn apply_native_audio_modulation(
     }
 }
 
+#[cfg(target_os = "macos")]
 fn native_audio_routes(preset: &str) -> (&'static [(&'static str, &'static str, f64)], f64) {
     match preset {
         "bass-tremor" => (
@@ -1560,6 +1572,7 @@ fn native_audio_routes(preset: &str) -> (&'static [(&'static str, &'static str, 
     }
 }
 
+#[cfg(target_os = "macos")]
 fn native_audio_feature(features: &SystemAudioFeatures, feature: &str) -> f64 {
     let value = match feature {
         "rms" => features.rms,
@@ -1573,6 +1586,7 @@ fn native_audio_feature(features: &SystemAudioFeatures, feature: &str) -> f64 {
     f64::from(value).clamp(0.0, 1.0)
 }
 
+#[cfg(target_os = "macos")]
 fn native_audio_feature_amount(params: &NativeRenderParams, feature: &str) -> f64 {
     match feature {
         "beatPulse" => params.audio_reactive_beat_amount,
@@ -1583,6 +1597,7 @@ fn native_audio_feature_amount(params: &NativeRenderParams, feature: &str) -> f6
     }
 }
 
+#[cfg(target_os = "macos")]
 fn add_native_audio_param(
     params: &mut NativeRenderParams,
     base: &NativeRenderParams,
@@ -1601,6 +1616,7 @@ fn add_native_audio_param(
     }
 }
 
+#[cfg(target_os = "macos")]
 fn clamp_native_visual_safety(params: &mut NativeRenderParams, base: &NativeRenderParams) {
     params.saturation_boost =
         clamp_with_base(params.saturation_boost, base.saturation_boost, 0.0, 3.0);
@@ -1622,10 +1638,12 @@ fn clamp_native_visual_safety(params: &mut NativeRenderParams, base: &NativeRend
     }
 }
 
+#[cfg(target_os = "macos")]
 fn clamp_with_base(value: f64, base: f64, min: f64, max: f64) -> f64 {
     value.clamp(min.min(base), max.max(base))
 }
 
+#[cfg(target_os = "macos")]
 fn smooth_noise(elapsed: f64, period: f64, seed: f64) -> f64 {
     let x = elapsed / period.max(0.001);
     let i = x.floor();
@@ -1638,10 +1656,12 @@ fn smooth_noise(elapsed: f64, period: f64, seed: f64) -> f64 {
     )
 }
 
+#[cfg(target_os = "macos")]
 fn signed_smooth_noise(elapsed: f64, period: f64, seed: f64) -> f64 {
     smooth_noise(elapsed, period, seed) * 2.0 - 1.0
 }
 
+#[cfg(target_os = "macos")]
 fn ease_in_out(t: f64) -> f64 {
     let t = t.clamp(0.0, 1.0);
     if t < 0.5 {
@@ -1651,11 +1671,13 @@ fn ease_in_out(t: f64) -> f64 {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn hash01(value: f64) -> f64 {
     let raw = (value * 12.9898 + 78.233).sin() * 43_758.545_312_3;
     raw - raw.floor()
 }
 
+#[cfg(target_os = "macos")]
 fn lerp(a: f64, b: f64, t: f64) -> f64 {
     a + (b - a) * t.clamp(0.0, 1.0)
 }

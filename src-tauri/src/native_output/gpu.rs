@@ -227,6 +227,7 @@ pub(super) struct NativeGpuPresenter {
 }
 
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(super) struct NativeGpuFrameOutcome {
     pub(super) surface_status: &'static str,
     pub(super) presented: bool,
@@ -234,6 +235,7 @@ pub(super) struct NativeGpuFrameOutcome {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(super) struct NativeGpuFrameTiming {
     pub(super) prep_ns: u64,
     pub(super) acquire_ns: u64,
