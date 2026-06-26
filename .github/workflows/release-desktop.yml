@@ -189,6 +189,9 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          # GitHub-hosted macOS 26 images can include unrelated untrusted taps.
+          # Keep the bypass scoped to the bundle command instead of untapping runner-managed taps.
+          HOMEBREW_NO_REQUIRE_TAP_TRUST: '1'
         run: npm run tauri:build -- --config src-tauri/tauri.notarized.conf.json
 
       - name: Build Linux desktop bundle
