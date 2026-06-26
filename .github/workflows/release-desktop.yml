@@ -20,6 +20,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      # GitHub-hosted macOS 26 images can include unrelated untrusted taps.
+      # Keep this CI-scoped instead of untapping or trusting runner-managed taps.
+      HOMEBREW_NO_REQUIRE_TAP_TRUST: '1'
     strategy:
       fail-fast: false
       matrix:
@@ -198,9 +201,6 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          # GitHub-hosted macOS 26 images can include unrelated untrusted taps.
-          # Keep the bypass scoped to the bundle command instead of untapping runner-managed taps.
-          HOMEBREW_NO_REQUIRE_TAP_TRUST: '1'
         run: npm run tauri:build -- --config src-tauri/tauri.notarized.conf.json
 
       - name: Build Linux desktop bundle
