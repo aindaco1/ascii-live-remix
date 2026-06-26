@@ -174,7 +174,17 @@ jobs:
             echo "No Developer ID Application identity was found in the imported certificate."
             exit 1
           fi
+          cert_team_id="$(printf '%s\n' "$cert_id" | sed -E 's/.*\(([A-Z0-9]{3,})\).*/\1/')"
+          if [ "$cert_team_id" = "$cert_id" ]; then
+            cert_team_id=""
+          fi
+          team_id="${APPLE_TEAM_ID:-$cert_team_id}"
+          if [ "${#team_id}" -lt 3 ]; then
+            echo "APPLE_TEAM_ID is required for notarization and could not be derived from the Developer ID certificate."
+            exit 1
+          fi
           echo "APPLE_SIGNING_IDENTITY=$cert_id" >> "$GITHUB_ENV"
+          echo "APPLE_TEAM_ID=$team_id" >> "$GITHUB_ENV"
 
           echo "notarize=true" >> "$GITHUB_OUTPUT"
           echo "Using Developer ID signing and notarization for macOS."
@@ -186,7 +196,6 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           # GitHub-hosted macOS 26 images can include unrelated untrusted taps.
