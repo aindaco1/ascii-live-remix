@@ -39,6 +39,13 @@ jobs:
           fetch-depth: 0
           ref: ${{ env.RELEASE_TAG }}
 
+      - name: Checkout release tooling
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          ref: ${{ github.sha }}
+          path: .release-tooling
+
       - name: Install Linux Tauri prerequisites
         if: runner.os == 'Linux'
         run: |
@@ -223,6 +230,20 @@ jobs:
             echo "APPLE_NOTARIZATION_AUTH was not selected by the signing setup step."
             exit 1
           fi
+
+      - name: Sign macOS FFmpeg sidecars
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          tooling_script="scripts/sign_macos_ffmpeg_sidecars.mjs"
+          if [ ! -f "$tooling_script" ]; then
+            tooling_script=".release-tooling/scripts/sign_macos_ffmpeg_sidecars.mjs"
+          fi
+          node "$tooling_script"
+
+      - name: Verify signed macOS FFmpeg sidecars
+        if: runner.os == 'macOS'
+        run: npm run check:ffmpeg-release
 
       - name: Build notarized macOS bundle
         if: runner.os == 'macOS'

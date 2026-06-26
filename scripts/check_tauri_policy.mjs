@@ -335,6 +335,24 @@ if (releaseWorkflow.includes('npm run check:windows-authenticode')) {
   issues.push('release workflow must not require Authenticode verification for unsigned Windows preview artifacts');
 }
 
+const macosFfmpegSignIndex = releaseWorkflow.indexOf('sign_macos_ffmpeg_sidecars.mjs');
+const macosFfmpegCheckIndex = releaseWorkflow.indexOf('npm run check:ffmpeg-release', macosFfmpegSignIndex);
+const macosNotarizedBuildIndex = releaseWorkflow.indexOf('src-tauri/tauri.notarized.conf.json');
+if (
+  macosFfmpegSignIndex < 0 ||
+  macosNotarizedBuildIndex < 0 ||
+  macosFfmpegSignIndex > macosNotarizedBuildIndex
+) {
+  issues.push('release workflow must sign macOS FFmpeg sidecars before notarized packaging');
+}
+if (
+  macosFfmpegCheckIndex < 0 ||
+  macosNotarizedBuildIndex < 0 ||
+  macosFfmpegCheckIndex > macosNotarizedBuildIndex
+) {
+  issues.push('release workflow must verify signed macOS FFmpeg sidecar manifests before notarized packaging');
+}
+
 for (const [label, workflow] of [
   ['release-desktop.yml', releaseWorkflow],
   ['desktop.yml', desktopWorkflow]

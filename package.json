@@ -35,6 +35,7 @@
     "desktop:codesign:local": "bash scripts/create_local_codesign_identity.sh",
     "ffmpeg:stage": "node scripts/stage_ffmpeg_sidecars.mjs",
     "ffmpeg:build-sidecar": "bash scripts/build_ffmpeg_sidecar.sh",
+    "ffmpeg:sign:macos": "node scripts/sign_macos_ffmpeg_sidecars.mjs",
     "release:version:check": "node scripts/check_release_version.mjs",
     "release:secrets:check": "node scripts/check_github_release_secrets.mjs",
     "release:secrets:check:notarized": "node scripts/check_github_release_secrets.mjs --require-notarization",
