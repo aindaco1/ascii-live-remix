@@ -1,8 +1,17 @@
 import { detectMediaType, loadMediaSource } from './renderers/gpu/media-source.js?v=20260620-startup-permissions';
 import { createRenderer, detectCapabilities } from './renderers/gpu/ascii/renderer/index.js?v=20260618-camera-source';
 import {
+    glyphForLuma,
+    processCanvasColorLegacy as processColor,
+    processGpuCellColor,
+    shaderHash
+} from './renderers/shared/render-math.js?v=20260625-render-math';
+import {
     clearTauriBrowsingData,
+    captureTauriCrashReport,
     checkTauriUpdate,
+    discardTauriCrashReports,
+    getTauriCrashReportState,
     installTauriUpdate,
     isTauriRuntime,
     listenTauriEvent,
@@ -19,6 +28,8 @@ import {
     sendTauriOutputFrame,
     sendTauriOutputPixels,
     sendTauriOutputState,
+    setTauriCrashReportHandler,
+    setTauriCrashReportPreference,
     startTauriMediaSession,
     startTauriRawVideoSession,
     startTauriInputAudioCapture,
@@ -26,7 +37,8 @@ import {
     stopTauriInputAudioCapture,
     stopTauriSystemAudioCapture,
     stopTauriMediaSession,
-    stopTauriRawVideoSession
+    stopTauriRawVideoSession,
+    submitTauriCrashReports
 } from './renderers/desktop/tauri-adapter.js';
 import {
     browserScreenPlacement,
@@ -50,6 +62,7 @@ const els = {
     backendStatus: $('backend-status'),
     connectionStatus: $('connection-status'),
     checkUpdate: $('check-update'),
+    crashReportStatus: $('crash-report-status'),
     updateStatus: $('update-status'),
     activePresetLabel: $('active-preset-label'),
     sourceLabel: $('source-label'),
@@ -90,12 +103,14 @@ const els = {
     audioReactiveStatus: $('audio-reactive-status'),
     audioReactiveControls: $('audio-reactive-controls'),
     audioReactiveMeters: $('audio-reactive-meters'),
-    controls: $('controls')
+    controls: $('controls'),
+    crashReportDialog: $('crash-report-dialog'),
+    crashReportClose: $('crash-report-close'),
+    crashReportPreview: $('crash-report-preview'),
+    crashReportPreference: $('crash-report-preference'),
+    crashReportDiscard: $('crash-report-discard'),
+    crashReportSend: $('crash-report-send')
 };
-
-const ASCII_CHARS = " .'`^\":;Il!i><~+_-?][}{1)(|/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$";
-const CHAR_LUT = new Array(128);
-for (let i = 0; i < 128; i++) CHAR_LUT[i] = String.fromCharCode(i);
 
 const STORAGE_KEY = 'asciline-remix-state-v1';
 const PRESET_KEY = 'asciline-remix-user-presets-v1';
@@ -1978,6 +1993,52 @@ function logMediaDiagnostic(message) {
     recordTauriMediaDiagnostic(message).catch(() => {});
 }
 
+function errorMessage(error) {
+    if (!error) return 'Unknown error';
+    if (typeof error === 'string') return error;
+    if (error instanceof Error) return error.message || error.name || 'Error';
+    return error.message || error.reason?.message || String(error);
+}
+
+function errorStack(error) {
+    if (!error) return '';
+    if (error instanceof Error) return error.stack || '';
+    if (error.reason instanceof Error) return error.reason.stack || '';
+    return error.stack || '';
+}
+
+function errorCrashContext(error) {
+    const source = error?.reason instanceof Error ? error.reason : error;
+    if (!source || typeof source !== 'object') return {};
+    const out = {};
+    if (source.name) out.name = String(source.name);
+    const code = source.errorCode ?? source.code;
+    if (code !== undefined && code !== null && code !== '') out.code = String(code);
+    const statusCode = source.statusCode ?? source.status;
+    if (statusCode !== undefined && statusCode !== null && statusCode !== '') out.statusCode = String(statusCode);
+    return out;
+}
+
+function crashReportPreview(state) {
+    const reports = Array.isArray(state?.reports) ? state.reports : [];
+    if (!reports.length) return 'No pending crash reports.';
+    return reports.map((report, index) => {
+        const context = report.context ? JSON.stringify(report.context, null, 2) : '{}';
+        return [
+            `#${index + 1} ${report.kind || 'crash'} / ${report.surface || 'unknown'}`,
+            `Captured: ${report.capturedAt || 'unknown'}`,
+            '',
+            report.message || 'Crash report',
+            '',
+            'Context:',
+            context,
+            '',
+            'Stack:',
+            report.stack || 'No stack captured.'
+        ].join('\n');
+    }).join('\n\n---\n\n');
+}
+
 function snapshotAppStorage() {
     const keys = [STORAGE_KEY, PRESET_KEY, CUSTOM_SOURCE_KEY, OUTPUT_DISPLAY_KEY];
     return keys.map((key) => [key, localStorage.getItem(key)]);
@@ -2376,76 +2437,6 @@ function computeRows(params, sourceW = 16, sourceH = 9, pixelMode = false) {
     return Math.max(1, Math.round(params.cols / ratio * (params.cellWidth / params.cellHeight) * params.aspectCorrection));
 }
 
-function processColor(r, g, b, params) {
-    let rr = r / 255;
-    let gg = g / 255;
-    let bb = b / 255;
-    const avg = (rr + gg + bb) / 3;
-    rr = clamp(avg + (rr - avg) * params.saturationBoost, 0, 1);
-    gg = clamp(avg + (gg - avg) * params.saturationBoost, 0, 1);
-    bb = clamp(avg + (bb - avg) * params.saturationBoost, 0, 1);
-    rr = clamp((rr - 0.5) * params.contrastBoost + 0.5, 0, 1);
-    gg = clamp((gg - 0.5) * params.contrastBoost + 0.5, 0, 1);
-    bb = clamp((bb - 0.5) * params.contrastBoost + 0.5, 0, 1);
-    rr = clamp(Math.pow(rr * params.brightness, 1 / Math.max(0.01, params.gamma)), 0, 1);
-    gg = clamp(Math.pow(gg * params.brightness, 1 / Math.max(0.01, params.gamma)), 0, 1);
-    bb = clamp(Math.pow(bb * params.brightness, 1 / Math.max(0.01, params.gamma)), 0, 1);
-    if (params.quantizeBits > 0) {
-        const mask = 255 << params.quantizeBits & 255;
-        return [
-            (Math.round(rr * 255) & mask),
-            (Math.round(gg * 255) & mask),
-            (Math.round(bb * 255) & mask)
-        ];
-    }
-    return [Math.round(rr * 255), Math.round(gg * 255), Math.round(bb * 255)];
-}
-
-function shaderHash(x, y) {
-    let p3x = fract(x * 0.1031);
-    let p3y = fract(y * 0.1031);
-    let p3z = fract(x * 0.1031);
-    const dot = p3x * (p3y + 33.33) + p3y * (p3z + 33.33) + p3z * (p3x + 33.33);
-    p3x += dot;
-    p3y += dot;
-    p3z += dot;
-    return fract((p3x + p3y) * p3z);
-}
-
-function fract(value) {
-    return value - Math.floor(value);
-}
-
-function processGpuCellColor(r, g, b, params) {
-    let rr = r / 255;
-    let gg = g / 255;
-    let bb = b / 255;
-    const avg = (rr + gg + bb) / 3;
-    rr = clamp(avg + (rr - avg) * params.saturationBoost, 0, 1);
-    gg = clamp(avg + (gg - avg) * params.saturationBoost, 0, 1);
-    bb = clamp(avg + (bb - avg) * params.saturationBoost, 0, 1);
-    rr = clamp((rr - 0.5) * params.contrastBoost + 0.5, 0, 1);
-    gg = clamp((gg - 0.5) * params.contrastBoost + 0.5, 0, 1);
-    bb = clamp((bb - 0.5) * params.contrastBoost + 0.5, 0, 1);
-    rr = clamp(Math.pow(rr * params.brightness, 1 / Math.max(0.01, params.gamma)), 0, 1);
-    gg = clamp(Math.pow(gg * params.brightness, 1 / Math.max(0.01, params.gamma)), 0, 1);
-    bb = clamp(Math.pow(bb * params.brightness, 1 / Math.max(0.01, params.gamma)), 0, 1);
-
-    const quantizeBits = Math.max(0, Math.round(params.quantizeBits || 0));
-    if (quantizeBits > 0) {
-        const quantum = Math.pow(2, quantizeBits);
-        rr = Math.floor(rr * 255 / quantum) * quantum / 255;
-        gg = Math.floor(gg * 255 / quantum) * quantum / 255;
-        bb = Math.floor(bb * 255 / quantum) * quantum / 255;
-    }
-
-    const bgBlend = clamp(params.bgBlend || 0, 0, 1);
-    rr = rr * (1 - bgBlend) + (3 / 255) * bgBlend;
-    gg = gg * (1 - bgBlend) + (4 / 255) * bgBlend;
-    bb = bb * (1 - bgBlend) + (5 / 255) * bgBlend;
-    return [Math.round(rr * 255), Math.round(gg * 255), Math.round(bb * 255)];
-}
-
 function renderSoftwareCellSnapshot(source, params, targetWidth, targetHeight, frameCount = 0, options = {}) {
     const sourceElement = source?.canvas || source?.element || source;
     const sourceWidth = sourceElement?.videoWidth || sourceElement?.naturalWidth || sourceElement?.width || source?.width || 0;
@@ -2533,19 +2524,6 @@ function renderSoftwareCellSnapshot(source, params, targetWidth, targetHeight, f
     snapshotCtx.imageSmoothingEnabled = Boolean(params.smoothing);
     snapshotCtx.drawImage(renderCanvas, dx, dy, drawWidth, drawHeight);
     return snapshot;
-}
-
-function charsetChars(params) {
-    if (params.charset === 'blocks') return ' ░▒▓█';
-    if (params.charset === 'asciline') return ' .:-=+*#%@';
-    if (params.charset === 'classic-camera') return ' .,:;i1tfLCG08@';
-    return ASCII_CHARS;
-}
-
-function glyphForLuma(luma, params) {
-    const chars = charsetChars(params);
-    const idx = Math.min(chars.length - 1, Math.floor(luma / 256 * chars.length));
-    return chars[idx] || ' ';
 }
 
 function cssFilter(params) {
@@ -4693,11 +4671,14 @@ class RendererLabApp {
         this.desktopUpdate = null;
         this.desktopUpdateBusy = false;
         this.desktopUpdateStatus = '';
+        this.crashReportState = null;
+        this.crashReportBusy = false;
         this.warmMediaElements = [];
     }
 
     async init() {
         this._startWebViewKeepalive();
+        await this._initCrashReporter();
         await this._detectBackends();
         await this._restoreCustomSource();
         this._buildControls();
@@ -4724,6 +4705,163 @@ class RendererLabApp {
         if (!navigator.locks?.request) return;
         navigator.locks.request('asciline-remix-render-keepalive', { mode: 'shared' }, () => new Promise(() => {}))
             .catch((error) => console.info('[Renderer] WebView keepalive lock unavailable:', error));
+    }
+
+    async _initCrashReporter() {
+        if (!isTauriRuntime()) return;
+        setTauriCrashReportHandler((report) => {
+            this._captureCrashReport(report).catch((error) => {
+                console.warn('[CrashReporter] Capture failed:', error);
+            });
+        });
+        window.addEventListener('error', (event) => {
+            this._captureCrashReport({
+                kind: 'frontend-error',
+                surface: 'frontend',
+                message: event.message || errorMessage(event.error),
+                stack: errorStack(event.error),
+                context: {
+                    filename: event.filename || '',
+                    lineno: event.lineno || 0,
+                    colno: event.colno || 0,
+                    backend: this.params.backend,
+                    sourceMode: this.params.sourceMode,
+                    nativeOutputActive: this.nativeOutputActive,
+                    ...errorCrashContext(event.error)
+                }
+            }).catch((error) => console.warn('[CrashReporter] Window error capture failed:', error));
+        });
+        window.addEventListener('unhandledrejection', (event) => {
+            this._captureCrashReport({
+                kind: 'unhandled-rejection',
+                surface: 'frontend',
+                message: errorMessage(event.reason),
+                stack: errorStack(event.reason),
+                context: {
+                    backend: this.params.backend,
+                    sourceMode: this.params.sourceMode,
+                    nativeOutputActive: this.nativeOutputActive,
+                    ...errorCrashContext(event.reason)
+                }
+            }).catch((error) => console.warn('[CrashReporter] Rejection capture failed:', error));
+        });
+        await this._refreshCrashReportState();
+        if (this.crashReportState?.preference === 'always' && this.crashReportState?.pendingCount > 0) {
+            await this._sendCrashReports({ automatic: true });
+        }
+    }
+
+    async _captureCrashReport(report) {
+        if (!isTauriRuntime()) return;
+        const state = await captureTauriCrashReport({
+            ...report,
+            context: {
+                backend: this.params.backend,
+                sourceMode: this.params.sourceMode,
+                mediaType: this.params.mediaType,
+                nativeOutputActive: this.nativeOutputActive,
+                ...(report.context || {})
+            }
+        });
+        this._setCrashReportState(state);
+        if (state?.preference === 'always' && state?.pendingCount > 0) {
+            await this._sendCrashReports({ automatic: true });
+        }
+    }
+
+    async _refreshCrashReportState() {
+        if (!isTauriRuntime()) return;
+        try {
+            this._setCrashReportState(await getTauriCrashReportState());
+        } catch (error) {
+            console.warn('[CrashReporter] State unavailable:', error);
+        }
+    }
+
+    _setCrashReportState(state) {
+        this.crashReportState = state || null;
+        this._syncCrashReportUi();
+    }
+
+    _syncCrashReportUi() {
+        const pendingCount = Number(this.crashReportState?.pendingCount || 0);
+        if (els.crashReportStatus) {
+            els.crashReportStatus.hidden = !isTauriRuntime() || pendingCount <= 0;
+            els.crashReportStatus.classList.toggle('pending', pendingCount > 0);
+            els.crashReportStatus.textContent = pendingCount > 1 ? `Crash ${pendingCount}` : 'Crash';
+            els.crashReportStatus.title = pendingCount > 0 ? `${pendingCount} pending crash report${pendingCount === 1 ? '' : 's'}` : '';
+        }
+        if (els.crashReportPreference && this.crashReportState?.preference) {
+            els.crashReportPreference.value = this.crashReportState.preference;
+        }
+        if (els.crashReportPreview && !els.crashReportDialog?.hidden) {
+            els.crashReportPreview.value = crashReportPreview(this.crashReportState);
+        }
+        if (els.crashReportSend) {
+            els.crashReportSend.disabled = this.crashReportBusy || pendingCount <= 0 || this.crashReportState?.preference === 'off';
+        }
+        if (els.crashReportDiscard) {
+            els.crashReportDiscard.disabled = this.crashReportBusy || pendingCount <= 0;
+        }
+    }
+
+    _openCrashReportDialog() {
+        if (!els.crashReportDialog) return;
+        els.crashReportPreview.value = crashReportPreview(this.crashReportState);
+        els.crashReportDialog.hidden = false;
+        els.crashReportClose?.focus();
+        this._syncCrashReportUi();
+    }
+
+    _closeCrashReportDialog() {
+        if (els.crashReportDialog) els.crashReportDialog.hidden = true;
+    }
+
+    async _setCrashReportPreference(value) {
+        if (!isTauriRuntime()) return;
+        try {
+            this._setCrashReportState(await setTauriCrashReportPreference(value));
+            if (value === 'always' && this.crashReportState?.pendingCount > 0) {
+                await this._sendCrashReports({ automatic: true });
+            }
+        } catch (error) {
+            console.warn('[CrashReporter] Preference update failed:', error);
+        }
+    }
+
+    async _sendCrashReports(options = {}) {
+        if (!isTauriRuntime() || this.crashReportBusy) return;
+        if (this.crashReportState?.preference === 'off') return;
+        this.crashReportBusy = true;
+        this._syncCrashReportUi();
+        try {
+            const state = await submitTauriCrashReports();
+            this._setCrashReportState(state);
+            if (!options.automatic && state?.lastResult?.failed > 0) {
+                alert('Crash report submission failed. The report remains queued.');
+            }
+        } catch (error) {
+            console.warn('[CrashReporter] Submission failed:', error);
+            if (!options.automatic) alert('Crash report submission failed. The report remains queued.');
+        } finally {
+            this.crashReportBusy = false;
+            this._syncCrashReportUi();
+        }
+    }
+
+    async _discardCrashReports() {
+        if (!isTauriRuntime() || this.crashReportBusy) return;
+        this.crashReportBusy = true;
+        this._syncCrashReportUi();
+        try {
+            this._setCrashReportState(await discardTauriCrashReports());
+            this._closeCrashReportDialog();
+        } catch (error) {
+            console.warn('[CrashReporter] Discard failed:', error);
+        } finally {
+            this.crashReportBusy = false;
+            this._syncCrashReportUi();
+        }
     }
 
     async _detectBackends() {
@@ -5477,6 +5615,14 @@ class RendererLabApp {
         els.localMediaFile.addEventListener('change', () => this._selectLocalMediaFile());
         els.togglePlay.addEventListener('click', () => this.toggle());
         els.checkUpdate?.addEventListener('click', () => this._checkOrInstallDesktopUpdate());
+        els.crashReportStatus?.addEventListener('click', () => this._openCrashReportDialog());
+        els.crashReportClose?.addEventListener('click', () => this._closeCrashReportDialog());
+        els.crashReportSend?.addEventListener('click', () => this._sendCrashReports());
+        els.crashReportDiscard?.addEventListener('click', () => this._discardCrashReports());
+        els.crashReportPreference?.addEventListener('change', () => this._setCrashReportPreference(els.crashReportPreference.value));
+        els.crashReportDialog?.addEventListener('click', (event) => {
+            if (event.target === els.crashReportDialog) this._closeCrashReportDialog();
+        });
         els.overlay.addEventListener('click', () => this.start());
         els.reloadSource.addEventListener('click', () => this._reloadSource());
         els.savePreset.addEventListener('click', () => this._saveCurrentPreset());
@@ -5551,7 +5697,10 @@ class RendererLabApp {
         });
         document.addEventListener('click', () => this._closePresetOverflow());
         window.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape') this._closePresetOverflow();
+            if (event.key === 'Escape') {
+                this._closePresetOverflow();
+                this._closeCrashReportDialog();
+            }
         });
         window.addEventListener('resize', () => this._applyVisualState());
         window.addEventListener('beforeunload', () => {

@@ -1,6 +1,6 @@
 [package]
 name = "ascii-vj-remix"
-version = "0.9.1"
+version = "0.9.2"
 description = "ASCII VJ Remix renderer lab desktop shell"
 authors = ["ASCII VJ Remix Contributors"]
 edition = "2021"
@@ -20,6 +20,7 @@ cpal = "0.18.1"
 image = { version = "0.25", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
 pollster = "0.4"
 percent-encoding = "2"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 resvg = "0.47"
 tauri = { version = "2", features = ["macos-private-api", "protocol-asset", "unstable"] }
 tauri-plugin-dialog = "2"

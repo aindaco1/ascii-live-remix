@@ -1,7 +1,10 @@
 {
   "name": "ascii-vj-remix",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "private": true,
+  "workspaces": [
+    "crash-relay"
+  ],
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -13,8 +16,8 @@
     "preview": "vite preview --host 127.0.0.1 --port 8010",
     "check": "npm run check:offline",
     "check:offline": "npm run build && node scripts/check_offline_bundle.mjs",
-    "check:desktop": "npm run check:offline && npm run check:tauri-policy && npm run test:output-display && npm run test:updater-manifest && npm run test:macos-secret-args && npm run test:ffmpeg-policy && npm run check:ffmpeg-resources && npm run test:rust && npm run tauri -- build --debug --no-bundle",
-    "check:release": "npm run check:offline && npm run check:tauri-policy && npm run test:output-display && npm run test:updater-manifest && npm run test:macos-secret-args && npm run test:ffmpeg-policy && npm run test:ffmpeg-source-build && npm run check:ffmpeg-release && npm run test:rust",
+    "check:desktop": "npm run check:offline && npm run check:tauri-policy && npm run test:render-math && npm run test:crash-relay && npm run test:output-display && npm run test:updater-manifest && npm run test:macos-secret-args && npm run test:ffmpeg-policy && npm run check:ffmpeg-resources && npm run test:rust && npm run tauri -- build --debug --no-bundle",
+    "check:release": "npm run check:offline && npm run check:tauri-policy && npm run test:render-math && npm run test:crash-relay && npm run test:output-display && npm run test:updater-manifest && npm run test:macos-secret-args && npm run test:ffmpeg-policy && npm run test:ffmpeg-source-build && npm run check:ffmpeg-release && npm run test:rust",
     "check:bundle": "node scripts/check_tauri_bundle.mjs",
     "check:bundle:debug": "node scripts/check_tauri_bundle.mjs --profile debug",
     "check:bundle:release": "node scripts/check_tauri_bundle.mjs --profile release",
@@ -52,6 +55,8 @@
     "test:updater-manifest": "node scripts/test_tauri_update_manifest.mjs",
     "test:macos-secret-args": "node scripts/test_macos_notarization_secret_args.mjs",
     "test:native-output-log": "node scripts/analyze_native_output_log.mjs",
+    "test:render-math": "node scripts/test_render_math.mjs",
+    "test:crash-relay": "npm --prefix crash-relay test",
     "test:vectors": "node scripts/test_vectors.mjs",
     "test:rust": "node scripts/cargo_env.mjs test --manifest-path src-tauri/Cargo.toml",
     "tauri": "node scripts/tauri_env.mjs",
@@ -70,6 +75,9 @@
     "@tauri-apps/plugin-updater": "^2.10.1"
   },
   "allowScripts": {
+    "esbuild@0.28.1": true,
+    "sharp@0.34.5": true,
+    "workerd@1.20260625.1": true,
     "fsevents@2.3.3": true
   }
 }

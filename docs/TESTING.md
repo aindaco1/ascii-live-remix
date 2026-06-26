@@ -22,6 +22,8 @@ npm run check:ffmpeg-resources   # FFmpeg sidecar resource metadata checks
 npm run test:frame-prep          # Rust/JS frame-prep parity
 npm run test:decode-resize       # Decode/resize parity checks
 npm run check:media              # Media pipeline checks
+npm run test:render-math         # Shared renderer math vectors
+npm run test:crash-relay         # Cloudflare crash relay sanitizer/rate-limit tests
 npm run test:vectors             # Adaptive codec vector checks
 npm run test:rust                # Rust tests
 npm run check:desktop            # Main desktop validation gate
@@ -51,6 +53,8 @@ git diff --check
 | macOS secret handling | `npm run test:macos-secret-args` |
 | FFmpeg policy/resources | `npm run test:ffmpeg-policy`, `npm run check:ffmpeg-resources`, `npm run check:ffmpeg-release` |
 | Media frame prep/decode | `npm run test:frame-prep`, `npm run test:decode-resize`, `npm run check:media` |
+| Renderer math parity | `npm run test:render-math`, Rust shared-vector tests through `npm run test:rust` |
+| Crash relay | `npm run test:crash-relay` |
 | Adaptive codec vectors | `npm run test:vectors` |
 | Rust/Tauri modules | `npm run test:rust` |
 | Native output performance | `npm run smoke:native-output`, `npm run test:native-output-log` |
@@ -79,6 +83,7 @@ reactivity when behavior changes.
 
 ```bash
 npm run build
+npm run test:render-math
 npm run smoke:static
 npm run check:media
 ```
@@ -103,12 +108,17 @@ Glyph/Cell controls.
 
 ```bash
 npm run check:tauri-policy
+npm run test:crash-relay
 npm run test:rust
 npm run check:desktop
 ```
 
 Manually verify macOS Camera, Microphone, Screen/System Audio, and Pop Out
 behavior when the permission model changes.
+
+For crash-report changes, also verify that debug builds capture locally but do
+not submit, release builds use only `https://crash.dustwave.xyz/v1/reports`, and
+the output window has no crash-report permissions.
 
 ### FFmpeg and Media Engine
 

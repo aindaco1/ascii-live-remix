@@ -208,6 +208,11 @@ if (!mainCapability) {
     'core:webview:allow-clear-all-browsing-data',
     'core:webview:allow-create-webview-window',
     'process:allow-restart',
+    'allow-get-crash-report-state',
+    'allow-set-crash-report-preference',
+    'allow-capture-crash-report',
+    'allow-discard-crash-reports',
+    'allow-submit-crash-reports',
     'allow-select-media-file',
     'allow-list-media-files',
     'allow-forget-media-file',
@@ -267,7 +272,12 @@ if (!outputCapability) {
     'core:window:allow-set-position',
     'core:window:allow-set-size',
     'core:window:allow-show',
-    'process:allow-restart'
+    'process:allow-restart',
+    'allow-get-crash-report-state',
+    'allow-set-crash-report-preference',
+    'allow-capture-crash-report',
+    'allow-discard-crash-reports',
+    'allow-submit-crash-reports'
   ]) {
     if (permissions.has(forbidden)) {
       issues.push(`output capability must not include ${forbidden}`);
@@ -319,4 +329,4 @@ if (issues.length > 0) {
   process.exit(1);
 }
 
-console.log('Tauri policy check passed: local-only runtime policy with the configured GitHub updater endpoint exception.');
+console.log('Tauri policy check passed: local-only runtime policy with configured GitHub updater and Rust-only crash relay exceptions.');

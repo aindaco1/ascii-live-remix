@@ -1,4 +1,4 @@
-import { convertFileSrc, invoke, isTauri as tauriApiIsTauri } from '@tauri-apps/api/core';
+import { convertFileSrc, invoke as tauriInvoke, isTauri as tauriApiIsTauri } from '@tauri-apps/api/core';
 import { emitTo, listen } from '@tauri-apps/api/event';
 import { availableMonitors } from '@tauri-apps/api/window';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
@@ -15,6 +15,7 @@ const NATIVE_OUTPUT_CLOSED_EVENT = 'asciline-native-output-closed';
 let outputDestroyedUnlisten = null;
 let nativeOutputClosedUnlisten = null;
 let outputBackend = null;
+let crashReportHandler = null;
 
 const MEDIA_EXTENSIONS = {
     video: ['mp4', 'webm', 'mkv'],
@@ -33,6 +34,41 @@ function isTauriRuntime() {
         );
     } catch {
         return false;
+    }
+}
+
+function setTauriCrashReportHandler(handler) {
+    crashReportHandler = typeof handler === 'function' ? handler : null;
+}
+
+function crashContextForError(error) {
+    if (!error || typeof error !== 'object') return {};
+    const out = {};
+    if (error.name) out.name = String(error.name);
+    const code = error.errorCode ?? error.code;
+    if (code !== undefined && code !== null && code !== '') out.code = String(code);
+    const statusCode = error.statusCode ?? error.status;
+    if (statusCode !== undefined && statusCode !== null && statusCode !== '') out.statusCode = String(statusCode);
+    return out;
+}
+
+function reportTauriCommandFailure(command, error) {
+    if (!crashReportHandler || String(command || '').includes('crash_report')) return;
+    crashReportHandler({
+        kind: 'tauri-command',
+        surface: 'tauri-command',
+        message: error?.message || String(error || 'Tauri command failed'),
+        stack: error?.stack || '',
+        context: { command, ...crashContextForError(error) }
+    });
+}
+
+async function invokeTauri(command, args) {
+    try {
+        return await tauriInvoke(command, args);
+    } catch (error) {
+        reportTauriCommandFailure(command, error);
+        throw error;
     }
 }
 
@@ -64,7 +100,7 @@ function redactDiagnosticText(value) {
 async function openTauriMediaFile() {
     if (!isTauriRuntime()) return { available: false, file: null };
 
-    const selected = await invoke('select_media_file');
+    const selected = await invokeTauri('select_media_file');
     if (!selected) return { available: true, file: null };
 
     const selectedPath = selected.path || '';
@@ -87,86 +123,111 @@ async function openTauriMediaFile() {
 
 async function probeTauriMediaFile(file) {
     if (!isTauriRuntime() || !file?.id) return null;
-    return invoke('probe_registered_media', { id: file.id });
+    return invokeTauri('probe_registered_media', { id: file.id });
 }
 
 async function startTauriMediaSession(file, request) {
     if (!isTauriRuntime() || !file?.id) return null;
-    return invoke('start_registered_media_session', { id: file.id, request });
+    return invokeTauri('start_registered_media_session', { id: file.id, request });
 }
 
 async function readTauriMediaSessionFrame(sessionId) {
     if (!isTauriRuntime() || !sessionId) return null;
-    return invoke('read_media_session_frame', { sessionId });
+    return invokeTauri('read_media_session_frame', { sessionId });
 }
 
 async function readTauriMediaSessionFrames(sessionId, maxFrames) {
     if (!isTauriRuntime() || !sessionId) return null;
-    return invoke('read_media_session_frames', { sessionId, maxFrames });
+    return invokeTauri('read_media_session_frames', { sessionId, maxFrames });
 }
 
 async function stopTauriMediaSession(sessionId) {
     if (!isTauriRuntime() || !sessionId) return false;
-    return invoke('stop_media_session', { sessionId });
+    return invokeTauri('stop_media_session', { sessionId });
 }
 
 async function startTauriRawVideoSession(file, request) {
     if (!isTauriRuntime() || !file?.id) return null;
-    return invoke('start_raw_video_session', { id: file.id, request });
+    return invokeTauri('start_raw_video_session', { id: file.id, request });
 }
 
 async function readTauriRawVideoFrames(sessionId, maxFrames = 1) {
     if (!isTauriRuntime() || !sessionId) return null;
-    return invoke('read_raw_video_frames', { sessionId, maxFrames });
+    return invokeTauri('read_raw_video_frames', { sessionId, maxFrames });
 }
 
 async function stopTauriRawVideoSession(sessionId) {
     if (!isTauriRuntime() || !sessionId) return false;
-    return invoke('stop_raw_video_session', { sessionId });
+    return invokeTauri('stop_raw_video_session', { sessionId });
 }
 
 async function startTauriSystemAudioCapture() {
     if (!isTauriRuntime()) return { available: false, active: false };
-    return invoke('start_system_audio_capture');
+    return invokeTauri('start_system_audio_capture');
 }
 
 async function readTauriSystemAudioFeatures() {
     if (!isTauriRuntime()) return { available: false, active: false };
-    return invoke('read_system_audio_features');
+    return invokeTauri('read_system_audio_features');
 }
 
 async function stopTauriSystemAudioCapture() {
     if (!isTauriRuntime()) return false;
-    return invoke('stop_system_audio_capture');
+    return invokeTauri('stop_system_audio_capture');
 }
 
 async function startTauriInputAudioCapture(deviceLabel = '') {
     if (!isTauriRuntime()) return { available: false, active: false };
     const label = String(deviceLabel || '').trim();
-    return invoke('start_input_audio_capture', {
+    return invokeTauri('start_input_audio_capture', {
         request: label ? { deviceLabel: label } : null
     });
 }
 
 async function readTauriInputAudioFeatures() {
     if (!isTauriRuntime()) return { available: false, active: false };
-    return invoke('read_input_audio_features');
+    return invokeTauri('read_input_audio_features');
 }
 
 async function stopTauriInputAudioCapture() {
     if (!isTauriRuntime()) return false;
-    return invoke('stop_input_audio_capture');
+    return invokeTauri('stop_input_audio_capture');
 }
 
 async function requestTauriMediaPermission(kind) {
     if (!isTauriRuntime()) return { available: false, kind, status: 'unsupported' };
-    return invoke('request_media_permission', { kind });
+    return invokeTauri('request_media_permission', { kind });
 }
 
 async function recordTauriMediaDiagnostic(message) {
     if (!isTauriRuntime()) return false;
-    await invoke('record_media_diagnostic', { message: redactDiagnosticText(message) });
+    await invokeTauri('record_media_diagnostic', { message: redactDiagnosticText(message) });
     return true;
+}
+
+async function getTauriCrashReportState() {
+    if (!isTauriRuntime()) return { available: false, pendingCount: 0, reports: [] };
+    return invokeTauri('get_crash_report_state');
+}
+
+async function captureTauriCrashReport(report) {
+    if (!isTauriRuntime()) return { available: false, pendingCount: 0, reports: [] };
+    return invokeTauri('capture_crash_report', { report });
+}
+
+async function submitTauriCrashReports() {
+    if (!isTauriRuntime()) return { available: false, pendingCount: 0, reports: [] };
+    return invokeTauri('submit_crash_reports');
+}
+
+async function discardTauriCrashReports() {
+    if (!isTauriRuntime()) return { available: false, pendingCount: 0, reports: [] };
+    return invokeTauri('discard_crash_reports');
+}
+
+async function setTauriCrashReportPreference(preference) {
+    if (!isTauriRuntime()) return { available: false, pendingCount: 0, reports: [] };
+    return invokeTauri('set_crash_report_preference', { preference });
 }
 
 async function clearTauriBrowsingData() {
@@ -220,7 +281,7 @@ async function sendTauriOutputState(payload) {
     if (!isTauriRuntime()) return false;
     if (outputBackend === 'native') {
         try {
-            const result = await invoke('update_native_output_window', { payload });
+            const result = await invokeTauri('update_native_output_window', { payload });
             if (result?.opened) return true;
             outputBackend = null;
             return false;
@@ -243,7 +304,7 @@ async function sendTauriOutputFrame(frame) {
     if (!isTauriRuntime()) return false;
     if (outputBackend === 'native') {
         try {
-            const result = await invoke('update_native_output_frame', { frame });
+            const result = await invokeTauri('update_native_output_frame', { frame });
             if (result?.accepted) return true;
             outputBackend = null;
             return false;
@@ -265,7 +326,7 @@ async function sendTauriOutputFrame(frame) {
 async function sendTauriOutputPixels(frame) {
     if (!isTauriRuntime() || outputBackend !== 'native') return false;
     try {
-        const result = await invoke('update_native_output_pixels', { frame });
+        const result = await invokeTauri('update_native_output_pixels', { frame });
         if (result?.accepted) return true;
         outputBackend = null;
         return false;
@@ -317,7 +378,7 @@ async function openNativeSurfaceOutput(payload, options = {}) {
         await recordTauriMediaDiagnostic(
             `[TauriOutput] native-open start mode=${payload?.outputMode || 'unknown'} sourceMode=${params.sourceMode || 'unknown'} mediaType=${params.mediaType || 'unknown'}`
         ).catch(() => {});
-        const result = await invoke('open_native_output_window', {
+        const result = await invokeTauri('open_native_output_window', {
             request: {
                 payload,
                 displayPreference: options.outputDisplay || 'auto',
@@ -400,7 +461,10 @@ async function openTauriOutputWindow(payload, options = {}) {
 
 export {
     clearTauriBrowsingData,
+    captureTauriCrashReport,
     checkTauriUpdate,
+    discardTauriCrashReports,
+    getTauriCrashReportState,
     installTauriUpdate,
     isTauriRuntime,
     listenTauriEvent,
@@ -418,6 +482,8 @@ export {
     sendTauriOutputFrame,
     sendTauriOutputPixels,
     sendTauriOutputState,
+    setTauriCrashReportHandler,
+    setTauriCrashReportPreference,
     startTauriMediaSession,
     startTauriRawVideoSession,
     startTauriInputAudioCapture,
@@ -425,5 +491,6 @@ export {
     stopTauriInputAudioCapture,
     stopTauriSystemAudioCapture,
     stopTauriMediaSession,
-    stopTauriRawVideoSession
+    stopTauriRawVideoSession,
+    submitTauriCrashReports
 };

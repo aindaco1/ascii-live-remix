@@ -65,7 +65,8 @@ surface for live ASCII/cell visuals.
 - Runtime must be local-first and offline by default.
 - Do not add CDN, hosted font, hosted decoder, telemetry, or online runtime
   dependencies.
-- The only intentional online runtime path is the GitHub Releases updater.
+- Intentional online runtime paths are limited to the GitHub Releases updater and
+  production-only reviewed/sanitized crash report submission.
 - Preserve the app name: ASCII VJ Remix.
 - Preserve the native app direction for macOS, Windows, and Linux.
 - Do not reframe browser mode as the product. Browser/Vite paths are useful for
@@ -86,7 +87,7 @@ surface for live ASCII/cell visuals.
 
 ## Current User-Facing Baseline
 
-Current docs describe the 0.9.1 feature set.
+Current docs describe the 0.9.2 feature set.
 
 Sources:
 

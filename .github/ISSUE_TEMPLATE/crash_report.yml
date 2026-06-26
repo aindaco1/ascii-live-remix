@@ -1,0 +1,61 @@
+name: Crash report
+description: Report a sanitized ASCII VJ Remix crash.
+title: "[Crash]: "
+labels:
+  - crash
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for sanitized crash reports. Do not attach media files, raw audio, secrets, or private filesystem paths.
+  - type: input
+    id: fingerprint
+    attributes:
+      label: Crash fingerprint
+      description: Stable fingerprint used to aggregate similar reports.
+      placeholder: "abc123"
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      placeholder: "0.9.2"
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      options:
+        - frontend
+        - renderer
+        - tauri-command
+        - native-output
+        - panic-hook
+        - startup
+        - unknown
+    validations:
+      required: true
+  - type: textarea
+    id: message
+    attributes:
+      label: Message
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Sanitized context
+      render: markdown
+    validations:
+      required: false
+  - type: textarea
+    id: stack
+    attributes:
+      label: Sanitized stack
+      render: text
+    validations:
+      required: false

@@ -20,6 +20,9 @@ and keeping the dense control UI responsive while the renderer is under load.
   live-control path.
 - Keep all runtime assets local so performance does not depend on network
   availability.
+- Keep crash reporting off the render path. Capture, queueing, sanitization, and
+  submission must be bounded and must not block frame presentation or live
+  controls.
 - Watch thermals and battery. This app can intentionally keep CPU, GPU, camera,
   media decode, and audio analysis active.
 
@@ -166,6 +169,20 @@ Rules:
 - Clamp modulation so high sensitivity cannot drive pure black or pure white
   screens.
 - Restart capture automatically when the selected input device changes.
+
+### Crash Reporting
+
+Crash reporting must stay opportunistic and low overhead.
+
+Rules:
+
+- Capture small structured reports only; do not attach frames, screenshots,
+  media files, raw audio, or long logs.
+- Keep local queues bounded by report count and byte size.
+- Submit asynchronously from Rust with short network timeouts.
+- Never wait on crash-report submission before starting renderers, switching
+  sources, opening Pop Out, or applying live controls.
+- In debug/dev builds, capture locally but refuse network submission.
 
 ## Battery and Thermal Guidance
 

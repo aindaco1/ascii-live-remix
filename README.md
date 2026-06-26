@@ -8,7 +8,7 @@ The app is built for VJ-style experimentation: pick a source, choose a preset,
 push the renderer hard, pop the output onto another display, and keep tuning
 the look live while the media keeps running.
 
-Current documentation describes the 0.9.1 feature set.
+Current documentation describes the 0.9.2 feature set.
 
 ## Quick Links
 
@@ -132,7 +132,11 @@ workbench for stylized ASCII/cell video output.
   - The main control window can open selected media and manage output.
   - The output window has a minimal command surface.
 - GitHub Releases updater infrastructure is configured.
-- The only intentional online path is the updater check/download flow.
+- Intentional online paths are limited to the updater check/download flow and
+  production-only reviewed/sanitized crash report submission.
+- Crash report submission goes through the Rust desktop layer to the
+  `https://crash.dustwave.xyz` Cloudflare Worker relay. The webview does not get
+  arbitrary HTTP capability and selected media is never uploaded.
 
 ### Advanced and Development-Only Paths
 
@@ -355,7 +359,8 @@ ASCII VJ Remix is designed to be local-first.
 - Audio analysis is local.
 - The packaged app should not download renderer assets, fonts, codecs, models,
   or media providers at runtime.
-- The Tauri updater is the only intentional online path.
+- Intentional online paths are limited to the Tauri updater and production-only
+  reviewed/sanitized crash reports.
 - Custom desktop file access is session-scoped. If the app says a custom file
   needs access after restart, reselect the file.
 

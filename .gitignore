@@ -16,6 +16,7 @@ __pycache__/
 
 # Environment & IDE
 .env
+.dev.vars
 .DS_Store
 dist/
 node_modules/

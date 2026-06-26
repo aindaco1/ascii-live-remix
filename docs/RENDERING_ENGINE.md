@@ -174,6 +174,35 @@ The control surface, presets, persistence, source changes, WTF mode, audio
 reactivity, native output, and future MIDI all read from or write through this
 model.
 
+### Shared Renderer Math
+
+Version 0.9.2 starts reducing duplicated renderer math without changing visible
+Canvas or stream output.
+
+Shared JavaScript helpers live in:
+
+```text
+renderers/shared/render-math.js
+renderers/shared/render-math-vectors.json
+```
+
+The shared module currently owns:
+
+- GPU-style color processing used by software snapshots and native parity tests.
+- Legacy Canvas color processing.
+- Legacy stream color processing.
+- shader-style jitter hash helpers.
+- compact charset and luminance-to-glyph helpers.
+
+The legacy Canvas and stream functions are intentionally named separately from
+the GPU function. Canvas/stream quantization and background-blend behavior are
+preserved in 0.9.2 so this release does not introduce visual regressions while
+the shader/math contract is being consolidated.
+
+`npm run test:render-math` validates the JavaScript helpers against shared
+vectors. Rust native output tests consume the same vector file for GPU color
+processing parity.
+
 ### Effective Params
 
 Some features should affect live rendering without changing saved state.

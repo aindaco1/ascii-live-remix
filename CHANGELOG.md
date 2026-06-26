@@ -1,8 +1,53 @@
 # Changelog
 
-Version 0.9.1 adds traditional ASCII preset work and native Pop Out glyph
-parity. Version 0.9.0 remains the first documentation baseline for the current
-ASCII VJ Remix feature set.
+Version 0.9.2 adds reviewed/sanitized crash reporting through a Cloudflare
+GitHub issue relay and starts renderer math consolidation without changing
+Canvas or stream visuals. Version 0.9.0 remains the first documentation
+baseline for the current ASCII VJ Remix feature set.
+
+## [0.9.2] - 2026-06-25
+
+### Added
+
+- Added a production-only crash reporter for frontend errors, unhandled
+  rejections, Tauri command failures, and Rust panic-hook reports.
+- Added reviewed/sanitized crash report preferences: ask, always send, and off.
+- Added a Cloudflare Worker crash relay at `crash.dustwave.xyz` that rate-limits
+  intake, sanitizes payloads, fingerprints reports, and creates or updates
+  aggregated GitHub issues through a GitHub App.
+- Added a GitHub crash report issue template and crash relay deployment workflow.
+- Added shared renderer math vectors covering GPU color processing and legacy
+  Canvas/stream color behavior.
+
+### Changed
+
+- Tauri crash report submission now runs from Rust only; the webview does not get
+  arbitrary HTTP capability.
+- The output window remains presentation-only and receives no crash-report
+  commands.
+- Crash relay aggregation now groups by stable crash dimensions, including
+  platform and explicit error-code fields when present, before falling back to
+  normalized stack or message matching.
+- Browser Canvas and stream visuals are intentionally preserved. The 0.9.2
+  consolidation work extracts shared helpers and tests first instead of changing
+  numerical output.
+- Renderer color/hash/charset helpers now live under `renderers/shared/` for
+  reuse by app code and tests.
+
+### Security
+
+- Crash reports are bounded and sanitized before local storage or submission.
+  Media files, frames, raw audio, full paths, tokens, cookies, and private
+  environment values are not included.
+- Crash report network submission is disabled for non-production/debug builds.
+- GitHub credentials live only in Cloudflare Worker secrets; no GitHub token is
+  embedded in the desktop app.
+
+### Validation
+
+- Added `npm run test:render-math` and `npm run test:crash-relay`.
+- `npm run check:desktop` and `npm run check:release` now include crash relay and
+  renderer math checks.
 
 ## [0.9.1] - 2026-06-24
 

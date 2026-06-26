@@ -5,15 +5,15 @@ validation practices for ASCII VJ Remix.
 
 ASCII VJ Remix's risk profile is a local-first Tauri desktop app that handles
 local media, cameras, microphones, system audio, native output windows, bundled
-FFmpeg sidecars, and signed update artifacts.
+FFmpeg sidecars, signed update artifacts, and reviewed/sanitized crash reports.
 
 ## Security Principles
 
 - Keep the packaged app local-first and offline by default.
 - Do not add CDNs, hosted fonts, hosted codecs, telemetry, hosted renderers, or
   runtime dependency downloads.
-- Treat the GitHub Releases updater as the only intentional online runtime
-  path.
+- Treat the GitHub Releases updater and production-only crash reporter as the
+  only intentional online runtime paths.
 - Keep user-selected media, camera frames, and audio analysis local.
 - Require explicit user selection before reading a local file.
 - Keep Tauri capabilities narrow and window-specific.
@@ -39,6 +39,7 @@ FFmpeg sidecars, and signed update artifacts.
 | Asset protocol | Empty by default, expanded only for selected media/session needs | High | Avoid persistent broad paths. |
 | FFmpeg sidecars | Bundled resources with policy checks and source/provenance metadata | Medium | No runtime downloads. Release sidecars should disable network protocols. |
 | Updater | GitHub Releases endpoint with signed updater packages | High | Private signing key is external. Public key is committed. |
+| Crash reporter | Rust-only POST to `https://crash.dustwave.xyz/v1/reports` in production builds | High | Reports are bounded, sanitized, user-configurable, and relayed to GitHub issues by a Cloudflare Worker. |
 | Logs and smoke reports | Local developer/test artifacts | Low to Medium | Do not log private file paths, raw audio, or sensitive environment values unless needed for explicit debugging. |
 
 ## Release Hardening Notes
@@ -48,6 +49,8 @@ The current release line includes these security hardening rules:
 - Production CSP allows only the app origin, Tauri IPC, and the Tauri asset
   protocol needed for selected local media. Localhost HTTP/WebSocket endpoints
   belong in development CSP only until stream mode is productized.
+- Crash report submission is implemented in Rust, not webview `fetch`, so the
+  production CSP does not gain arbitrary remote `connect-src` access.
 - GitHub Actions updater signing secrets are scoped to the updater-secret check
   and Tauri packaging steps. Do not place `TAURI_SIGNING_PRIVATE_KEY`,
   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, Apple certificate values, or keychain
@@ -79,12 +82,13 @@ The production runtime is intentionally narrow:
 - Production CSP does not allow arbitrary localhost HTTP/WebSocket endpoints;
   localhost stream/dev endpoints belong only in `devCsp` until stream mode is
   productized for normal users.
-- `npm run check:tauri-policy` verifies the local-only runtime policy and the
-  GitHub updater endpoint exception.
+- `npm run check:tauri-policy` verifies the local-only runtime policy, the
+  GitHub updater endpoint exception, and the Rust-only crash reporter command
+  boundary.
 - Capabilities in `src-tauri/capabilities/` split main-window privileges from
   output-window privileges.
 - The main window owns media selection, output management, audio providers, and
-  updater work.
+  updater/crash-report work.
 - The output window should only listen for render/output messages and expose
   the minimum close/fullscreen behavior it needs.
 
@@ -97,6 +101,53 @@ When adding a Tauri command:
    display a user-selected filename.
 5. Add or update a test/check when the command changes the app's security
    posture.
+
+## Crash Reporting
+
+Crash reporting is opt-in by preference and production-only for network
+submission. Debug/dev builds can capture local reports for testing, but Rust
+refuses to submit them.
+
+The crash reporter can capture:
+
+- frontend `error` events.
+- frontend `unhandledrejection` events.
+- Tauri command failures.
+- Rust panic-hook reports imported on the next launch.
+
+Security requirements:
+
+- Reports must be bounded before local storage and before submission.
+- Reports must redact local paths, asset/file URLs, emails, tokens, cookies,
+  passwords, and auth-like context keys.
+- Reports must not include user media files, decoded frames, screenshots, raw
+  audio, local storage dumps, environment dumps, or arbitrary logs.
+- The app stores at most a small local queue and lets the user choose `ask`,
+  `always`, or `off`.
+- Submission uses the Rust command surface only. The output window must not have
+  crash-report permissions.
+- GitHub credentials must not be present in the desktop app, repository config,
+  or client-visible bundle.
+
+Crash relay architecture:
+
+```text
+release desktop app
+  -> Rust crash reporter command
+  -> https://crash.dustwave.xyz/v1/reports
+  -> Cloudflare Worker validation, rate limiting, and sanitization
+  -> GitHub App installation token
+  -> aggregated GitHub issue
+```
+
+The Cloudflare Worker lives in `crash-relay/`. Its GitHub App secrets are set
+with `wrangler secret put`, and its KV namespaces rate-limit intake and index
+crash fingerprints. Similar reports update one open issue instead of creating a
+new issue for every report. The fingerprint prefers stable dimensions such as
+kind, surface, platform, command/backend/source mode, native-output state, and
+explicit error-code fields; normalized stack frame or message are fallbacks.
+Issue bodies keep bounded aggregate state rather than concatenating every
+report.
 
 ## Local Media and File Access
 

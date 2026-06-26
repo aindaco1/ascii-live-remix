@@ -1,0 +1,48 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "ascii-vj-crash-relay",
+	"main": "src/index.js",
+	"compatibility_date": "2026-06-25",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"workers_dev": false,
+	"routes": [
+		{
+			"pattern": "crash.dustwave.xyz",
+			"custom_domain": true
+		}
+	],
+	"observability": {
+		"enabled": true,
+		"head_sampling_rate": 1
+	},
+	"vars": {
+		"APP_MODE": "production",
+		"WORKER_BASE": "https://crash.dustwave.xyz",
+		"CRASH_REPORTS_ENABLED": "true",
+		"CRASH_ALLOWED_APP_IDENTIFIER": "com.asciline.remix",
+		"CRASH_LABELS": "crash,automated-report,needs-triage",
+		"CRASH_MAX_PAYLOAD_BYTES": "24576",
+		"CRASH_IP_LIMIT": "20",
+		"CRASH_IP_WINDOW_SECONDS": "3600",
+		"CRASH_NEW_ISSUE_DAILY_LIMIT": "25",
+		"CRASH_UPDATE_COOLDOWN_SECONDS": "900",
+		"DEBUG_CONSOLE_LOGGING_ENABLED": "true",
+		"DEBUG_VERBOSE_CONSOLE_LOGGING": "false",
+		"GITHUB_OWNER": "aindaco1",
+		"GITHUB_REPO": "ascii-vj-remix"
+	},
+	"kv_namespaces": [
+		{
+			"binding": "RATELIMIT",
+			"id": "1c5b4f1ac7d847f49c31efdebbb74f88",
+			"preview_id": "aa1fcc6ce08a49d881bbb44227f711de"
+		},
+		{
+			"binding": "CRASH_INDEX",
+			"id": "6810b75b07d84ea2a2e097dac828b2eb",
+			"preview_id": "dc3c6f656bb84806877186de2ff389e0"
+		}
+	]
+}

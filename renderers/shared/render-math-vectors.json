@@ -1,0 +1,45 @@
+{
+  "gpu": [
+    {
+      "name": "identity",
+      "rgb": [0, 128, 255],
+      "params": {
+        "saturationBoost": 1,
+        "contrastBoost": 1,
+        "brightness": 1,
+        "gamma": 1,
+        "quantizeBits": 0,
+        "bgBlend": 0
+      },
+      "expected": [0, 128, 255]
+    },
+    {
+      "name": "quantize-and-background-blend",
+      "rgb": [255, 129, 3],
+      "params": {
+        "saturationBoost": 1,
+        "contrastBoost": 1,
+        "brightness": 1,
+        "gamma": 1,
+        "quantizeBits": 2,
+        "bgBlend": 0.5
+      },
+      "expected": [128, 66, 3]
+    }
+  ],
+  "canvasLegacy": [
+    {
+      "name": "legacy-quantize-without-background-blend",
+      "rgb": [255, 129, 3],
+      "params": {
+        "saturationBoost": 1,
+        "contrastBoost": 1,
+        "brightness": 1,
+        "gamma": 1,
+        "quantizeBits": 2,
+        "bgBlend": 0.5
+      },
+      "expected": [252, 128, 0]
+    }
+  ]
+}

@@ -192,6 +192,67 @@ button:disabled {
     white-space: nowrap;
 }
 
+.crash-report-button {
+    min-height: 24px;
+    padding: 0 8px;
+    border-color: var(--red);
+    color: var(--red);
+    font-size: 11px;
+    line-height: 1;
+}
+
+.crash-report-button.pending {
+    border-color: var(--amber);
+    color: var(--amber);
+}
+
+.crash-report-dialog {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.72);
+}
+
+.crash-report-dialog[hidden] {
+    display: none;
+}
+
+.crash-report-panel {
+    width: min(760px, 100%);
+    max-height: min(720px, 92vh);
+    display: grid;
+    grid-template-rows: auto minmax(220px, 1fr) auto;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel);
+    box-shadow: 0 20px 80px rgba(0, 0, 0, 0.45);
+}
+
+.crash-report-panel textarea {
+    width: 100%;
+    min-height: 220px;
+    resize: vertical;
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    padding: 10px;
+    background: var(--panel-2);
+    color: var(--text);
+    font: 12px/1.45 var(--font-mono);
+}
+
+.crash-report-actions {
+    display: flex;
+    align-items: end;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
 .workspace {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 390px;

@@ -3901,6 +3901,7 @@ fn fract(value: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::Deserialize;
 
     fn base_payload() -> NativeOutputPayload {
         NativeOutputPayload {
@@ -4089,6 +4090,56 @@ mod tests {
         params.quantize_bits = 2;
         params.bg_blend = 0.5;
         assert_eq!(process_gpu_cell_color(255, 129, 3, &params), (128, 66, 3));
+    }
+
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct RenderMathVectors {
+        gpu: Vec<RenderMathVector>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct RenderMathVector {
+        name: String,
+        rgb: [u8; 3],
+        params: RenderMathVectorParams,
+        expected: [u8; 3],
+    }
+
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct RenderMathVectorParams {
+        saturation_boost: f64,
+        contrast_boost: f64,
+        brightness: f64,
+        gamma: f64,
+        quantize_bits: u32,
+        bg_blend: f64,
+    }
+
+    #[test]
+    fn color_processing_matches_shared_vectors() {
+        let vectors: RenderMathVectors = serde_json::from_str(include_str!(
+            "../../renderers/shared/render-math-vectors.json"
+        ))
+        .expect("render math vectors should parse");
+
+        for vector in vectors.gpu {
+            let mut params = params();
+            params.saturation_boost = vector.params.saturation_boost;
+            params.contrast_boost = vector.params.contrast_boost;
+            params.brightness = vector.params.brightness;
+            params.gamma = vector.params.gamma;
+            params.quantize_bits = vector.params.quantize_bits;
+            params.bg_blend = vector.params.bg_blend;
+            assert_eq!(
+                process_gpu_cell_color(vector.rgb[0], vector.rgb[1], vector.rgb[2], &params),
+                (vector.expected[0], vector.expected[1], vector.expected[2]),
+                "shared vector failed: {}",
+                vector.name
+            );
+        }
     }
 
     #[test]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-submit-crash-reports"
+description = "Enables the submit_crash_reports command without any pre-configured scope."
+commands.allow = ["submit_crash_reports"]
+
+[[permission]]
+identifier = "deny-submit-crash-reports"
+description = "Denies the submit_crash_reports command without any pre-configured scope."
+commands.deny = ["submit_crash_reports"]

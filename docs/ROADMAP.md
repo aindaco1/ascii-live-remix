@@ -30,7 +30,8 @@ MIDI-driven ASCII visuals.
 - Vite builds a deterministic `dist/` bundle.
 - Runtime assets are copied locally into the build output.
 - Packaged desktop builds are designed to run without online connectivity.
-- The only intentional online runtime path is the GitHub Releases updater.
+- Intentional online runtime paths are limited to the GitHub Releases updater and
+  production-only reviewed/sanitized crash report submission.
 
 ### Source Workflow
 
@@ -224,6 +225,9 @@ source/backend.
 - Developer ID signing/notarization workflow scaffolding exists but is deferred.
 - GitHub Releases updater infrastructure is configured.
 - Release CI builds signed updater artifacts when the private key is present.
+- Production crash reporting captures bounded sanitized frontend, Tauri command,
+  and Rust panic reports and sends them through a Cloudflare Worker relay to
+  aggregated GitHub issues when enabled.
 
 ### FFmpeg and Media Engine Work
 
@@ -251,6 +255,8 @@ Current checks include:
 - `npm run check:media`.
 - `npm run test:rust`.
 - `npm run test:vectors`.
+- `npm run test:render-math`.
+- `npm run test:crash-relay`.
 - Native output log analysis and performance smoke helpers.
 
 The maintained validation matrix lives in [Testing](TESTING.md). Renderer and
@@ -333,6 +339,15 @@ Scope:
 
 Reduce duplicated shader/math behavior across browser GPU, Canvas, stream, and
 native output paths.
+
+0.9.2 status:
+
+- Shared JavaScript render math helpers and vector fixtures exist under
+  `renderers/shared/`.
+- GPU color-processing vectors are consumed by both JavaScript and Rust native
+  output tests.
+- Canvas and stream color helpers remain intentionally legacy-named and
+  behavior-preserving. Full numerical unification is still future work.
 
 Scope:
 
