@@ -156,10 +156,21 @@ jobs:
             api_key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY}.p8"
             printf '%s' "$APPLE_API_KEY_P8" > "$api_key_path"
             chmod 600 "$api_key_path"
+            {
+              printf 'APPLE_NOTARIZATION_AUTH=api-key\n'
+              printf 'APPLE_API_KEY=%s\n' "$APPLE_API_KEY"
+              printf 'APPLE_API_ISSUER=%s\n' "$APPLE_API_ISSUER"
+            } >> "$GITHUB_ENV"
             echo "APPLE_API_KEY_PATH=$api_key_path" >> "$GITHUB_ENV"
           elif [ -z "$APPLE_ID" ] || [ -z "$APPLE_PASSWORD" ] || [ -z "$APPLE_TEAM_ID" ]; then
             echo "Notarization requires either APPLE_API_KEY/APPLE_API_ISSUER/APPLE_API_KEY_P8 or APPLE_ID/APPLE_PASSWORD/APPLE_TEAM_ID."
             exit 1
+          else
+            {
+              printf 'APPLE_NOTARIZATION_AUTH=apple-id\n'
+              printf 'APPLE_ID=%s\n' "$APPLE_ID"
+              printf 'APPLE_PASSWORD=%s\n' "$APPLE_PASSWORD"
+            } >> "$GITHUB_ENV"
           fi
 
           certificate_path="$RUNNER_TEMP/developer-id-application.p12"
@@ -192,15 +203,32 @@ jobs:
           echo "notarize=true" >> "$GITHUB_OUTPUT"
           echo "Using Developer ID signing and notarization for macOS."
 
+      - name: Verify macOS notarization credentials
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          if [ "$APPLE_NOTARIZATION_AUTH" = "api-key" ]; then
+            xcrun notarytool history \
+              --key "$APPLE_API_KEY_PATH" \
+              --key-id "$APPLE_API_KEY" \
+              --issuer "$APPLE_API_ISSUER" \
+              --output-format json >/dev/null
+          elif [ "$APPLE_NOTARIZATION_AUTH" = "apple-id" ]; then
+            xcrun notarytool history \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
+              --output-format json >/dev/null
+          else
+            echo "APPLE_NOTARIZATION_AUTH was not selected by the signing setup step."
+            exit 1
+          fi
+
       - name: Build notarized macOS bundle
         if: runner.os == 'macOS'
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: npm run tauri:build -- --config src-tauri/tauri.notarized.conf.json
 
       - name: Build Linux desktop bundle
