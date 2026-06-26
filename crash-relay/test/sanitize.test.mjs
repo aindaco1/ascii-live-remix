@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { crashFingerprint, crashGroupingSummary } from '../src/fingerprint.js';
+import { isIgnoredCrashReport } from '../src/index.js';
 import { sanitizeCrashPayload } from '../src/sanitize.js';
 
 const env = { CRASH_ALLOWED_APP_IDENTIFIER: 'com.asciline.remix' };
@@ -123,4 +124,40 @@ test('fingerprint separates different error codes on the same platform', async (
   }, env);
 
   assert.notEqual(await crashFingerprint(deviceLost), await crashFingerprint(validation));
+});
+
+test('ignores expected macOS system audio permission denials', () => {
+  const report = sanitizeCrashPayload({
+    app: { identifier: 'com.asciline.remix', version: '0.9.2' },
+    report: {
+      kind: 'tauri-command',
+      surface: 'tauri-command',
+      message: 'Native system audio needs macOS Screen & System Audio Recording permission for ASCII VJ Remix: No shareable content available: Content unavailable: The user declined TCCs for application, window, display capture',
+      context: {
+        command: 'start_system_audio_capture',
+        backend: 'canvas2d',
+        sourceMode: 'static'
+      }
+    }
+  }, env);
+
+  assert.equal(isIgnoredCrashReport(report), true);
+});
+
+test('keeps unexpected Tauri command failures reportable', () => {
+  const report = sanitizeCrashPayload({
+    app: { identifier: 'com.asciline.remix', version: '0.9.2' },
+    report: {
+      kind: 'tauri-command',
+      surface: 'tauri-command',
+      message: 'Native renderer failed to allocate output buffer',
+      context: {
+        command: 'update_native_output_frame',
+        backend: 'canvas2d',
+        sourceMode: 'static'
+      }
+    }
+  }, env);
+
+  assert.equal(isIgnoredCrashReport(report), false);
 });

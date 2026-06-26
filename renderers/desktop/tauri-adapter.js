@@ -52,8 +52,31 @@ function crashContextForError(error) {
     return out;
 }
 
+const EXPECTED_PERMISSION_COMMANDS = new Set([
+    'request_media_permission',
+    'start_input_audio_capture',
+    'start_system_audio_capture'
+]);
+
+function tauriErrorText(error) {
+    return `${error?.name || ''} ${error?.message || error || ''}`.toLowerCase();
+}
+
+function isExpectedPermissionCommandFailure(command, error) {
+    if (!EXPECTED_PERMISSION_COMMANDS.has(String(command || ''))) return false;
+    const raw = tauriErrorText(error);
+    return raw.includes('permission') ||
+        raw.includes('declined') ||
+        raw.includes('notallowed') ||
+        raw.includes('not allowed') ||
+        raw.includes('no shareable content') ||
+        raw.includes('content unavailable') ||
+        raw.includes('tcc');
+}
+
 function reportTauriCommandFailure(command, error) {
     if (!crashReportHandler || String(command || '').includes('crash_report')) return;
+    if (isExpectedPermissionCommandFailure(command, error)) return;
     crashReportHandler({
         kind: 'tauri-command',
         surface: 'tauri-command',

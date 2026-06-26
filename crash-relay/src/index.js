@@ -19,6 +19,34 @@ function maxPayloadBytes(env) {
   return Number.isFinite(value) && value > 1024 ? value : 24576;
 }
 
+const EXPECTED_PERMISSION_COMMANDS = new Set([
+  'request_media_permission',
+  'start_input_audio_capture',
+  'start_system_audio_capture'
+]);
+
+function isPermissionLikeText(value) {
+  const raw = String(value || '').toLowerCase();
+  return raw.includes('permission') ||
+    raw.includes('declined') ||
+    raw.includes('notallowed') ||
+    raw.includes('not allowed') ||
+    raw.includes('no shareable content') ||
+    raw.includes('content unavailable') ||
+    raw.includes('tcc');
+}
+
+function isIgnoredCrashReport(sanitized) {
+  const report = sanitized?.report || {};
+  const context = report.context || {};
+  if (report.kind !== 'tauri-command' || report.surface !== 'tauri-command') return false;
+  if (!EXPECTED_PERMISSION_COMMANDS.has(String(context.command || ''))) return false;
+  return isPermissionLikeText(report.message) ||
+    isPermissionLikeText(context.name) ||
+    isPermissionLikeText(context.code) ||
+    isPermissionLikeText(context.statusCode);
+}
+
 async function readBoundedJson(request, env) {
   const limit = maxPayloadBytes(env);
   const length = Number(request.headers.get('Content-Length') || 0);
@@ -74,6 +102,15 @@ async function handleReport(request, env) {
     return json({ error: error.message || 'Crash report rejected' }, 400);
   }
 
+  if (isIgnoredCrashReport(sanitized)) {
+    return json({
+      ok: true,
+      reportId: sanitized.report.id,
+      action: 'ignored',
+      reason: 'expected-permission-denial'
+    });
+  }
+
   const fingerprint = await crashFingerprint(sanitized);
   try {
     const result = await submitCrashReport(env, sanitized, fingerprint);
@@ -106,3 +143,5 @@ export default {
     return json({ error: 'Not found' }, 404);
   }
 };
+
+export { isIgnoredCrashReport, isPermissionLikeText };
